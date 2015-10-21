@@ -208,7 +208,7 @@
     (compose-ast muse f)
     (MuseMap. f (cons muse muses))))
 
-;; xxx: make it compatible with algo.generic and cats libraries
+;; xxx: make it compatible with algo.generic
 (defn flat-map
   [f muse & muses]
   (MuseFlatMap. f (cons muse muses)))
@@ -235,6 +235,16 @@
       (mapcat next-level values)
       '())))
 
+(defn fetch-cached
+  [head tail]
+  (let [all-res (->> tail
+                     (cons head)
+                     (group-by cache-id)
+                     (map (fn [[_ v]] (first v))))]
+    (go (let [ids (map cache-id all-res)
+              fetch-results (<! (async/map vector (map fetch all-res)))]
+          (into {} (map vector ids fetch-results))))))
+
 (defn fetch-group
   [[resource-name [head & tail]]]
   (go
@@ -243,14 +253,7 @@
       (let [res (<! (fetch head))] {(cache-id head) res})
       (if (satisfies? BatchedSource head)
         (<! (fetch-multi head tail))
-        (let [all-res (->> tail
-                           (cons head)
-                           (group-by cache-id)
-                           (map (fn [[_ v]] (first v))))]
-          ;; xxx: refactor
-          (<! (go (let [ids (map cache-id all-res)
-                        fetch-results (<! (async/map vector (map fetch all-res)))]
-                    (zipmap ids fetch-results)))))))]))
+        (<! (fetch-cached head tail))))]))
 
 (defn interpret-ast
   [ast]
