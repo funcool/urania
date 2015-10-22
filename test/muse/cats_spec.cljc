@@ -1,28 +1,27 @@
 (ns muse.cats-spec
   #?(:clj
      (:require [clojure.test :refer (deftest is)]
-               [clojure.core.async :refer (go <!!) :as a]
                [muse.core :as muse]
+               [promissum.core :as prom]
                [cats.core :as m]
                [cats.context :refer [with-context]])
      :cljs
      (:require [cljs.test :refer-macros (deftest is async)]
-               [cljs.core.async :as a :refer (take!)]
+               [promesa.core :as prom]
                [muse.core :as muse]
                [cats.core :as m]))
-  #? (:cljs (:require-macros [cljs.core.async.macros :refer (go)]
-                             [cats.context :refer (with-context)]))
+  #?(:cljs (:require-macros [cats.context :refer (with-context)]))
   (:refer-clojure :exclude (run!)))
 
 (defrecord DList [size]
   muse/DataSource
-  (fetch [_] (go (range size)))
+  (fetch [_] (prom/resolved (range size)))
   muse/LabeledSource
   (resource-id [_] #?(:clj size :cljs [:DList size])))
 
 (defrecord Single [seed]
   muse/DataSource
-  (fetch [_] (go seed))
+  (fetch [_] (prom/resolved seed))
   muse/LabeledSource
   (resource-id [_] #?(:clj seed :cljs [:Single seed])))
 
@@ -37,10 +36,10 @@
 
 (defn assert-ast [expected ast-factory]
   #?(:clj (is (= expected (muse/run!! (ast-factory))))
-     :cljs (async done (take! (muse/run! (ast-factory)) (fn [r] (is (= expected r)) (done))))))
+     :cljs (async done (prom/then (muse/run! (ast-factory)) (fn [r] (is (= expected r)) (done))))))
 
 (deftest runner-macros
-  #?(:clj (is (= 5 (<!! (muse/run! (m/fmap count (DList. 5)))))))
+  #?(:clj (is (= 5 (deref (muse/run! (m/fmap count (DList. 5)))))))
   (assert-ast 10 (fn [] (m/fmap count (DList. 10))))
   (assert-ast 15 (fn [] (m/bind (Single. 10) (fn [num] (Single. (+ 5 num)))))))
 

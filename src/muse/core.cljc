@@ -1,15 +1,18 @@
 (ns muse.core
   #?(:cljs (:require-macros [muse.core :refer (run!)]
-                            [cljs.core.async.macros :refer (go)])
-     :clj (:require [clojure.core.async :as async :refer (go <! >! <!!)]
+                            [cats.context :refer (with-context)])
+     :clj (:require [promissum.core :as prom]
                     [clojure.string :as s]
-                    [cats.context :as ctx]
+                    [cats.core :as m]
+                    [cats.context :as ctx :refer [with-context]]
                     [cats.protocols :as proto]))
-  #?(:cljs (:require [cljs.core.async :as async :refer (<! >!)]
+  #?(:cljs (:require [promesa.core :as prom]
                      [clojure.string :as s]
+                     [cats.core :as m]
                      [cats.context :as ctx]
                      [cats.protocols :as proto]))
   (:refer-clojure :exclude (run!)))
+
 
 (declare fmap)
 (declare flat-map)
@@ -241,35 +244,73 @@
                      (cons head)
                      (group-by cache-id)
                      (map (fn [[_ v]] (first v))))]
-    (go (let [ids (map cache-id all-res)
-              fetch-results (<! (async/map vector (map fetch all-res)))]
-          (into {} (map vector ids fetch-results))))))
+    (prom/promise (fn [resolve]
+                    (let [ids (map cache-id all-res)
+                          fetch-promises (map fetch all-res)]
+                      (with-context prom/promise-context
+                        (prom/then (prom/all fetch-promises)
+                                   (fn [fetch-results]
+                                     (resolve (zipmap ids fetch-results))))))))))
+
+(defn fetch-head
+  [head]
+  (prom/then (fetch head)
+             (fn [res]
+               {(cache-id head) res})))
+
+(defn fetch-group*
+  [head tail]
+  (if (not (seq tail))
+    (fetch-head head)
+    (if (satisfies? BatchedSource head)
+      (fetch-multi head tail)
+      (fetch-cached head tail))))
 
 (defn fetch-group
   [[resource-name [head & tail]]]
-  (go
-   [resource-name
-    (if (not (seq tail))
-      (let [res (<! (fetch head))] {(cache-id head) res})
-      (if (satisfies? BatchedSource head)
-        (<! (fetch-multi head tail))
-        (<! (fetch-cached head tail))))]))
+  (prom/then (fetch-group* head tail)
+             (fn [resp]
+               [resource-name resp])))
+
+(defn interpret-ast*
+ [ast-node cache resolve reject]
+ (let [fetches (next-level ast-node)]
+   (if (not (seq fetches))
+     ;; xxx: should be MuseDone, assert & throw exception otherwise
+     (if (done? ast-node)
+       (resolve (:value ast-node))
+       (recur (inject-into {:cache cache} ast-node) cache resolve reject))
+     (let [by-type (group-by resource-name fetches)
+           fetch-promises (map fetch-group by-type)]
+       (with-context prom/promise-context
+         (prom/branch (prom/all fetch-promises)
+                      (fn [fetch-groups]
+                        (let [next-cache (into cache fetch-groups)]
+                          (interpret-ast* (inject-into {:cache next-cache} ast-node)
+                                          next-cache
+                                          resolve
+                                          reject)))
+                      reject))))))
+
+#?(:clj
+   (defn deferred []
+     (let [p (prom/promise)
+           resolver (partial prom/deliver p)]
+       [p resolver resolver]))
+   :cljs
+   (defn deferred []
+     (let [vresolve (volatile! nil)
+           vreject (volatile! nil)
+           p (prom/promise (fn [resolve reject]
+                             (vreset! vresolve resolve)
+                             (vreset! vreject reject)))]
+       [p @vresolve @vreject])))
 
 (defn interpret-ast
   [ast]
-  (go
-   (loop [ast-node ast cache {}]
-     (let [fetches (next-level ast-node)]
-       (if (not (seq fetches))
-         ;; xxx: should be MuseDone, assert & throw exception otherwise
-         (if (done? ast-node)
-           (:value ast-node)
-           (recur (inject-into {:cache cache} ast-node) cache))
-         (let [by-type (group-by resource-name fetches)
-               ;; xxx: catch & propagate exceptions
-               fetch-groups (<! (async/map vector (map fetch-group by-type)))
-               next-cache (into cache fetch-groups)]
-           (recur (inject-into {:cache next-cache} ast-node) next-cache)))))))
+  (let [[p resolve reject] (deferred)]
+    (interpret-ast* ast {} resolve reject)
+    p))
 
 #?(:clj
    (defmacro run!
@@ -281,7 +322,7 @@
       Returns a channel which will receive the result of
       the body when completed."
      [ast]
-     `(ctx/with-context ast-monad (interpret-ast ~ast))))
+     `(with-context ast-monad (interpret-ast ~ast))))
 
 #?(:clj
    (defmacro run!!
@@ -289,4 +330,4 @@
       Will block if nothing is available. Not available on
       ClojureScript."
      [ast]
-     `(<!! (run! ~ast))))
+     `(deref (run! ~ast))))

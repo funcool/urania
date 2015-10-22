@@ -1,30 +1,35 @@
 (ns muse.core-spec
   #?(:clj
      (:require [clojure.test :refer (deftest is)]
-               [clojure.core.async :refer (go <!!)]
+               [promissum.core :as prom]
                [muse.core :as muse :refer (fmap flat-map)])
      :cljs
      (:require [cljs.test :refer-macros (deftest is async)]
-               [cljs.core.async :refer (take!)]
+               [promesa.core :as prom]
                [muse.core :as muse :refer (fmap flat-map)]))
-  #? (:cljs (:require-macros [cljs.core.async.macros :refer (go)]))
   (:refer-clojure :exclude (run!)))
 
 (defrecord DList [size]
   muse/DataSource
-  (fetch [_] (go (range size)))
+  (fetch [_] (prom/resolved (range size)))
   muse/LabeledSource
   (resource-id [_] #?(:clj size :cljs [:DList size])))
 
+(defrecord DListFail [size]
+  muse/DataSource
+  (fetch [_] (prom/rejected (ex-info "Invalid size" {:size size})))
+  muse/LabeledSource
+  (resource-id [_] #?(:clj size :cljs [:DListFail size])))
+
 (defrecord Single [seed]
   muse/DataSource
-  (fetch [_] (go seed))
+  (fetch [_] (prom/resolved seed))
   muse/LabeledSource
   (resource-id [_] #?(:clj seed :cljs [:Single seed])))
 
 (defrecord Pair [seed]
   muse/DataSource
-  (fetch [_] (go [seed seed]))
+  (fetch [_] (prom/resolved [seed seed]))
   muse/LabeledSource
   (resource-id [_] #?(:clj seed :cljs [:Pair seed])))
 
@@ -37,15 +42,32 @@
 (defn- assert-ast
   ([expected ast] (assert-ast expected ast nil))
   ([expected ast callback]
-   #?(:clj (is (= expected (muse/run!! ast)))
-      :cljs (async done (take! (muse/run! ast)
-                               (fn [r]
-                                 (is (= expected r))
-                                 (when callback (callback))
-                                 (done)))))))
+   #?(:clj
+      (is (= expected (muse/run!! ast)))
+      :cljs
+      (async done (prom/then (muse/run! ast)
+                             (fn [r]
+                               (is (= expected r))
+                               (when callback (callback))
+                               (done)))))))
+
+(defn- assert-err
+  ([expected ast] (assert-err expected ast nil))
+  ([expected ast callback]
+   #?(:clj
+      (try
+        (muse/run!! ast)
+      (catch Exception e
+        (is (= expected (.getMessage e)))))
+      :cljs
+      (async done (prom/catch (muse/run! ast)
+                              (fn [r]
+                                (is (= expected (ex-message r)))
+                                (when callback (callback))
+                                (done)))))))
 
 (deftest datasource-ast
-  #?(:clj (is (= 10 (count (<!! (muse/run! (DList. 10)))))))
+  #?(:clj (is (= 10 (count (muse/run!! (DList. 10))))))
   #?(:clj (is (= 20 (count (muse/run!! (DList. 20))))))
   (assert-ast 30 (fmap count (DList. 30)))
   (assert-ast 40 (fmap inc (fmap count (DList. 39))))
@@ -56,6 +78,22 @@
   (assert-ast [15 15] (flat-map mk-pair (muse/value 15)))
   (assert-ast 60 (fmap sum-pair (flat-map mk-pair (Single. 30))))
   (assert-ast 60 (fmap sum-pair (flat-map mk-pair (muse/value 30)))))
+
+(deftest error-propagation
+  #?@(:clj
+      [(is (prom/rejected? (muse/run! (DListFail. 30))))
+       (assert-err "clojure.lang.ExceptionInfo: Invalid size {:size 30}"
+                   (fmap concat
+                         (DList. 10)
+                         (DListFail. 30)
+                         (DList. 10)))]
+      :cljs
+      [
+       (assert-err "Invalid size"
+                   (fmap concat
+                         (DList. 10)
+                         (DListFail. 30)
+                         (DList. 10)))]))
 
 (deftest higher-level-api
   (assert-ast [0 1] (muse/collect [(Single. 0) (Single. 1)]))
@@ -82,13 +120,17 @@
 ;; attention! never do such mutations within "fetch" in real code
 (defrecord Trackable [tracker seed]
   muse/DataSource
-  (fetch [_] (go (swap! tracker inc) seed))
+  (fetch [_] (prom/promise (fn [resolve]
+                             (swap! tracker inc)
+                             (resolve seed))))
   muse/LabeledSource
   (resource-id [_] #?(:clj seed :cljs [:Trackable seed])))
 
 (defrecord TrackableName [tracker seed]
   muse/DataSource
-  (fetch [_] (go (swap! tracker inc) seed))
+  (fetch [_] (prom/promise (fn [resolve]
+                             (swap! tracker inc)
+                             (resolve seed))))
   muse/LabeledSource
   (resource-id [_] [:name seed]))
 
@@ -96,7 +138,9 @@
 #?(:clj
    (defrecord TrackableId [tracker id]
      muse/DataSource
-     (fetch [_] (go (swap! tracker inc) id))))
+     (fetch [_] (prom/promise (fn [resolve]
+                                (swap! tracker inc)
+                                (resolve id))))))
 
 ;; w explicit source labeling
 #?(:clj
@@ -165,11 +209,11 @@
 
 #_(defrecord Country [iso-id]
     muse/DataSource
-    (fetch [_] (go {:regions [{:code 1} {:code 2} {:code 3}]})))
+    (fetch [_] (prom/resolved {:regions [{:code 1} {:code 2} {:code 3}]})))
 
 #_(defrecord Region [country-iso-id url-id]
     muse/DataSource
-    (fetch [_] (go (inc url-id))))
+    (fetch [_] (prom/resolved (inc url-id))))
 
 #_(deftest disabled-caching
     (is (nil? (try (run!! (->> (Country. "es")
