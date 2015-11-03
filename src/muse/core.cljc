@@ -31,9 +31,9 @@
     (-mbind [_ mv f] (flat-map f mv))))
 
 (defprotocol DataSource
-  "Defines fetch method for the concrete data source. Relies on core.async
-   channel as a result value for fetch call (to return immediately to the
-   calling thread and perform fetch asynchronously). If defrecord is used
+  "Defines fetch method for the concrete data source. Relies on a promise
+   as a result value for fetch call (to return immediately to the caller
+   and perform fetch operations asynchronously). If defrecord is used
    to define data source, name of record class will be used to batch fetches
    from the same round of execution as well as to cache previous results
    and sent fetch requests. Use LabeledSource protocol when using reify to
@@ -51,7 +51,7 @@
 
 (defprotocol BatchedSource
   "Group few data fetches into a single request to remote source (i.e.
-   Redis MGET or SQL SELECT .. IN ..). Return channel and write to it
+   Redis MGET or SQL SELECT .. IN ..). Return promise and write to it
    map from ID to generic fetch response (as it was made without batching).
 
    See example here: https://github.com/funcool/muse/blob/master/docs/sql.md"
@@ -319,14 +319,14 @@
       * fetch data sources async (when possible)
       * cache result of previously made fetches
       * batch calls to the same data source (when applicable)
-      Returns a channel which will receive the result of
+      Returns a promise which will receive the result of
       the body when completed."
      [ast]
      `(with-context ast-monad (interpret-ast ~ast))))
 
 #?(:clj
    (defmacro run!!
-     "takes a val from the channel returned by (run! ast).
+     "dereferences the the promise returned by (run! ast).
       Will block if nothing is available. Not available on
       ClojureScript."
      [ast]
