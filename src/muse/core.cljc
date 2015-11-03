@@ -247,10 +247,8 @@
     (prom/promise (fn [resolve]
                     (let [ids (map cache-id all-res)
                           fetch-promises (map fetch all-res)]
-                      (with-context prom/promise-context
-                        (prom/then (prom/all fetch-promises)
-                                   (fn [fetch-results]
-                                     (resolve (zipmap ids fetch-results))))))))))
+                        (m/fmap #(resolve (zipmap ids %))
+                                (prom/all fetch-promises)))))))
 
 (defn fetch-head
   [head]
