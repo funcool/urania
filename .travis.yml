@@ -6,8 +6,6 @@ script:
   - ./.travis/test-clj.sh
 
 jdk:
-  - openjdk7
-  - oraclejdk7
   - oraclejdk8
 
 matrix:

@@ -395,17 +395,17 @@ You can do the same tricks with [Redis](https://github.com/benashford/redis-asyn
 
 * `muse` implicitly rebuilds AST to work with tree levels instead of separate leaves that gives ability to batch requests and run independent fetches concurrently.
 
-* `muse/run!` is an interpreter that reduces AST level by level until the whole computation is finished (it returns a `core.async` channel that you can read from).
+* `muse/run!` is an interpreter that reduces AST level by level until the whole computation is finished (it returns a promise that you can read from).
 
 ## TODO & Ideas
 
-- [ ] catch & propagate exceptions
 - [ ] applicative functors interface
 - [ ] clean up code, test coverage, better high-level API
 
 ## Known Restrictions
 
-* works with `core.async` library only (if you use other async mechanism, like `future`s you can easily turn your code to be compatible with `core.async`, i.e. with `async/thread`)
+* requires Java 8 when used from Clojure due to its use of `java.util.concurrent.CompletableFuture`
+* works with `promesa` (CLJS) and `promissum` (CLJ) libraries only (if you use other async mechanism, like `future`s you can easily turn your code to be compatible with promises)
 * assumes your operations with data sources are "side-effects free", so you don't really care about the order of fetches
 * yes, you need enough memory to store the whole data fetched during a single `run!` call (in case it's impossible you should probably look into other ways to solve your problem, i.e. data stream libraries)
 
