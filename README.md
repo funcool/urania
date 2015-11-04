@@ -44,27 +44,8 @@ Here, `(friends-of x)` and `(friends-of y)` are independent, and you want it to 
 
 (defn num-common-friends [x y]
   (muse/fmap (comp count intersection) (friends-of x) (friends-of y)))
-```
 
-Mapping over lists will also run concurrently:
-
-```clojure
-(defn friends-of-friends
-  [id]
-  (->> id
-       friends-of
-       (muse/traverse friends-of)
-       (muse/fmap (partial apply union)))))
-```
-
-You can also use monad interface with `cats` library:
-
-```clojure
-(defn get-post
-  [id]
-  (m/mlet [post (fetch-post id)
-           author (fetch-user (:author-id post))]
-    (m/return (assoc post :author author))))
+(muse/run! (num-common-friends 1 2))
 ```
 
 ## Usage
@@ -135,12 +116,12 @@ Run simplest scenario:
 
 ```clojure
 (friends-of 10)
-;; => #core.friends-of:id 10}
+;; => #core.FriendsOf{:id 10}
 
 (muse/run! (friends-of 10))
 ;; --> 10 .. 877.3953983155727
 ;; <-- 10
-;; => #<Promise {:status :pending}
+;; => #<Promise {:status :pending}>
 
 (deref (run! (friends-of 10)))
 ;; --> 10 .. 412.97080768100585
@@ -157,7 +138,7 @@ There is nothing special about it (yet), let's do something more interesting:
 
 ```clojure
 (muse/fmap count (friends-of 10))
-;; => #<MuseMap (clojure.core$count@1b932280 core.friends-of10])>
+;; => #<MuseMap (clojure.core$count@1b932280 core.FriendsOf[10])>
 
 (muse/run!! (muse/fmap count (friends-of 10)))
 ;; --> 10 .. 844.5086574753595
@@ -165,7 +146,7 @@ There is nothing special about it (yet), let's do something more interesting:
 ;; => 10
 
 (muse/fmap inc (muse/fmap count (friends-of 3)))
-;; => #<MuseMap (clojure.core$comp$fn__4192@4275ef0b core.friends-of3])>
+;; => #<MuseMap (clojure.core$comp$fn__4192@4275ef0b core.FriendsOf[3])>
 
 (run!! (muse/fmap inc (muse/fmap count (friends-of 3))))
 ;; --> 3 .. 334.5374146247876
@@ -280,7 +261,7 @@ If you come from Haskell you will probably like shortcuts:
 
 ```clojure
 (muse/<$> inc (muse/<$> count (friends-of 3)))
-;; => #<MuseMap (clojure.core$comp$fn__4192@6f2c4a58 core.friends-of3])>
+;; => #<MuseMap (clojure.core$comp$fn__4192@6f2c4a58 core.FriendsOf[3])>
 
 (run!! (muse/<$> inc (muse/<$> count (friends-of 3))))
 ;; => 4
