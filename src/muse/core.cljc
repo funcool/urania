@@ -178,7 +178,7 @@
   (done? [_] false)
   (inject [_ env]
     (let [next (map (partial inject-into env) values)]
-      (if (= (count next) (count (filter done? next)))
+      (if (every? done? next)
         (let [result (apply f (map :value next))]
           ;; xxx: refactor to avoid dummy leaves creation
           (if (satisfies? DataSource result) (MuseMap. identity [result]) result))
@@ -203,6 +203,8 @@
 
   Object
   (toString [_] (print-node value)))
+
+;; High-level API
 
 (defn value
   [v]
@@ -243,48 +245,56 @@
     (when-let [values (childs ast-node)]
       (mapcat next-level values))))
 
-(defn fetch-cached
-  [head tail]
-  (let [all-res (->> tail
-                     (cons head)
-                     (group-by cache-id)
-                     (map (fn [[_ v]] (first v))))]
-    (prom/promise (fn [resolve]
-                    (let [ids (map cache-id all-res)
-                          fetch-promises (map fetch all-res)]
+;; fetching
+
+(defn dedupe-sources
+  [sources]
+  (->> sources
+       (group-by cache-id)
+       vals
+       (map first)))
+
+(defn fetch-many-caching
+  [sources]
+  (prom/promise (fn [resolve]
+                    (let [all-sources (dedupe-sources sources)
+                          ids (map cache-id all-sources)
+                          fetches (map fetch all-sources)]
                         (m/fmap #(resolve (zipmap ids %))
-                                (prom/all fetch-promises)))))))
+                                (prom/all fetches))))))
 
-(defn fetch-head
-  [head]
-  (prom/then (fetch head)
+(defn fetch-one-caching
+  [source]
+  (prom/then (fetch source)
              (fn [res]
-               {(cache-id head) res})))
+               {(cache-id source) res})))
 
-(defn fetch-group*
-  [head tail]
-  (if (not (seq tail))
-    (fetch-head head)
+(defn fetch-sources
+  [[head & tail :as sources]]
+  (if-not (seq tail)
+    (fetch-one-caching head)
     (if (satisfies? BatchedSource head)
       (fetch-multi head tail)
-      (fetch-cached head tail))))
+      (fetch-many-caching sources))))
 
-(defn fetch-group
-  [[resource-name [head & tail]]]
-  (prom/then (fetch-group* head tail)
+(defn fetch-resource
+  [[resource-name sources]]
+  (prom/then (fetch-sources sources)
              (fn [resp]
                [resource-name resp])))
+
+;; AST interpreter
 
 (defn interpret-ast*
  [ast-node cache resolve reject]
  (let [fetches (next-level ast-node)]
-   (if (not (seq fetches))
+   (if-not (seq fetches)
      ;; xxx: should be MuseDone, assert & throw exception otherwise
      (if (done? ast-node)
        (resolve (:value ast-node))
        (recur (inject-into {:cache cache} ast-node) cache resolve reject))
      (let [by-type (group-by resource-name fetches)
-           fetch-promises (map fetch-group by-type)]
+           fetch-promises (map fetch-resource by-type)]
        (with-context prom/promise-context
          (prom/branch (prom/all fetch-promises)
                       (fn [fetch-groups]
@@ -311,10 +321,12 @@
 
 (defn interpret-ast
   [ast]
-  (let [[p resolve reject] (deferred)
+  (let [[promise resolve reject] (deferred)
         cache {}]
     (interpret-ast* ast cache resolve reject)
-    p))
+    promise))
+
+;; Macros
 
 #?(:clj
    (defmacro run!
