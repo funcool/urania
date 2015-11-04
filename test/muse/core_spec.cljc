@@ -88,8 +88,7 @@
                          (DListFail. 30)
                          (DList. 10)))]
       :cljs
-      [
-       (assert-err "Invalid size"
+      [(assert-err "Invalid size"
                    (fmap concat
                          (DList. 10)
                          (DListFail. 30)

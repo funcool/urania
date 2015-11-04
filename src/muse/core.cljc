@@ -66,9 +66,13 @@
       (when (pair-name-id? id)
         (first id)))))
 
+(defn- type->name
+  [type]
+  #?(:clj (.getName type)))
+
 (defn- resource-name [v]
   (let [value (or (labeled-resource-name v)
-                  #?(:clj (.getName (.getClass v))))]
+                  (type->name (type v)))]
     (assert (not (nil? value))
             (str "Resource name is not identifiable: " v
                  " Please, use record definition (for automatic resolve)"
@@ -98,7 +102,9 @@
 (defn labeled-cache-id
   [res]
   (let [id (resource-id res)]
-    (if (pair-name-id? id) (second id) id)))
+    (if (pair-name-id? id)
+      (second id)
+      id)))
 
 (defn cache-id
   [res]
@@ -234,9 +240,8 @@
   [ast-node]
   (if (satisfies? DataSource ast-node)
     (list ast-node)
-    (if-let [values (childs ast-node)]
-      (mapcat next-level values)
-      '())))
+    (when-let [values (childs ast-node)]
+      (mapcat next-level values))))
 
 (defn fetch-cached
   [head tail]
@@ -306,8 +311,9 @@
 
 (defn interpret-ast
   [ast]
-  (let [[p resolve reject] (deferred)]
-    (interpret-ast* ast {} resolve reject)
+  (let [[p resolve reject] (deferred)
+        cache {}]
+    (interpret-ast* ast cache resolve reject)
     p))
 
 #?(:clj
