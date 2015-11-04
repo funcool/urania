@@ -291,7 +291,7 @@ Custom response cache id:
 "@kachayev's timeline @kachayev's timeline "
 ```
 
-Find more examples in `test` directory and check `muse-examples` repo.
+Thorough documentation coming soon.
 
 ## ClojureScript
 
