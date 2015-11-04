@@ -57,22 +57,13 @@
    See example here: https://github.com/funcool/muse/blob/master/docs/sql.md"
   (fetch-multi [this resources]))
 
-(defn- pair-name-id? [id]
-  (and (sequential? id) (= 2 (count id))))
-
 (defn- labeled-resource-name [v]
   (when (satisfies? LabeledSource v)
-    (let [id (resource-id v)]
-      (when (pair-name-id? id)
-        (first id)))))
-
-(defn- type->name
-  [type]
-  #?(:clj (.getName type)))
+    (resource-id v)))
 
 (defn- resource-name [v]
   (let [value (or (labeled-resource-name v)
-                  (type->name (type v)))]
+                  (pr-str (type v)))]
     (assert (not (nil? value))
             (str "Resource name is not identifiable: " v
                  " Please, use record definition (for automatic resolve)"
@@ -99,17 +90,10 @@
   (done? [_] true)
   (inject [this _] this))
 
-(defn labeled-cache-id
-  [res]
-  (let [id (resource-id res)]
-    (if (pair-name-id? id)
-      (second id)
-      id)))
-
 (defn cache-id
   [res]
   (let [id (if (satisfies? LabeledSource res)
-             (labeled-cache-id res)
+             (resource-id res)
              (:id res))]
     (assert (not (nil? id))
             (str "Resource is not identifiable: " res

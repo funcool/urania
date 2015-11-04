@@ -13,25 +13,25 @@
   muse/DataSource
   (fetch [_] (prom/resolved (range size)))
   muse/LabeledSource
-  (resource-id [_] #?(:clj size :cljs [:DList size])))
+  (resource-id [_] size))
 
 (defrecord DListFail [size]
   muse/DataSource
   (fetch [_] (prom/rejected (ex-info "Invalid size" {:size size})))
   muse/LabeledSource
-  (resource-id [_] #?(:clj size :cljs [:DListFail size])))
+  (resource-id [_] size))
 
 (defrecord Single [seed]
   muse/DataSource
   (fetch [_] (prom/resolved seed))
   muse/LabeledSource
-  (resource-id [_] #?(:clj seed :cljs [:Single seed])))
+  (resource-id [_] seed))
 
 (defrecord Pair [seed]
   muse/DataSource
   (fetch [_] (prom/resolved [seed seed]))
   muse/LabeledSource
-  (resource-id [_] #?(:clj seed :cljs [:Pair seed])))
+  (resource-id [_] seed))
 
 (defn- mk-pair [seed] (Pair. seed))
 
@@ -123,7 +123,7 @@
                              (swap! tracker inc)
                              (resolve seed))))
   muse/LabeledSource
-  (resource-id [_] #?(:clj seed :cljs [:Trackable seed])))
+  (resource-id [_] seed))
 
 (defrecord TrackableName [tracker seed]
   muse/DataSource
