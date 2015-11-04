@@ -57,19 +57,6 @@
    See example here: https://github.com/funcool/muse/blob/master/docs/sql.md"
   (fetch-multi [this resources]))
 
-(defn- labeled-resource-name [v]
-  (when (satisfies? LabeledSource v)
-    (resource-id v)))
-
-(defn- resource-name [v]
-  (let [value (or (labeled-resource-name v)
-                  (pr-str (type v)))]
-    (assert (not (nil? value))
-            (str "Resource name is not identifiable: " v
-                 " Please, use record definition (for automatic resolve)"
-                 " or LabeledSource protocol (to specify it manually)"))
-    value))
-
 (defprotocol MuseAST
   (childs [this])
   (inject [this env])
@@ -90,6 +77,9 @@
   (done? [_] true)
   (inject [this _] this))
 
+(defn- resource-name [v]
+  (pr-str (type v)))
+
 (defn cache-id
   [res]
   (let [id (if (satisfies? LabeledSource res)
@@ -100,12 +90,11 @@
                  " Please, use LabeledSource protocol or record with :id key"))
     id))
 
-(defn cache-path
-  [res]
-  [(resource-name res) (cache-id res)])
+(def cache-path (juxt resource-name cache-id))
 
 (defn cached-or [env res]
-  (let [cached (get-in env (cons :cache (cache-path res)) ::not-found)]
+  (let [cache (get env :cache)
+        cached (get-in cache (cache-path res) ::not-found)]
     (if (= ::not-found cached)
       res
       (MuseDone. cached))))
