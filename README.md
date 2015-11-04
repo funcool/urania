@@ -123,12 +123,12 @@ Run simplest scenario:
 ;; <-- 10
 ;; => #<Promise {:status :pending}>
 
-(deref (run! (friends-of 10)))
+(deref (muse/run! (friends-of 10)))
 ;; --> 10 .. 412.97080768100585
 ;; <-- 10
 ;; => #{0 7 1 4 6 3 2 9 5 8}
 
-(run!! (friends-of 10)) ;; blocks until done
+(muse/run!! (friends-of 10)) ;; blocks until done
 ;; --> 10 .. 834.4564727277141
 ;; <-- 10
 ;; => #{0 7 1 4 6 3 2 9 5 8}
@@ -148,7 +148,7 @@ There is nothing special about it (yet), let's do something more interesting:
 (muse/fmap inc (muse/fmap count (friends-of 3)))
 ;; => #<MuseMap (clojure.core$comp$fn__4192@4275ef0b core.FriendsOf[3])>
 
-(run!! (muse/fmap inc (muse/fmap count (friends-of 3))))
+(muse/run!! (muse/fmap inc (muse/fmap count (friends-of 3))))
 ;; --> 3 .. 334.5374146247876
 ;; <-- 3
 ;; => 4
@@ -191,7 +191,7 @@ And now a few amazing facts.
 1) `muse` automatically runs fetches concurrently:
 
 ```clojure
-(run!! (num-common-friends 3 4))
+(muse/run!! (num-common-friends 3 4))
 ;; --> 3 .. 50.56579162982433
 ;; --> 4 .. 247.60281831534402
 ;; <-- 3
@@ -263,7 +263,7 @@ If you come from Haskell you will probably like shortcuts:
 (muse/<$> inc (muse/<$> count (friends-of 3)))
 ;; => #<MuseMap (clojure.core$comp$fn__4192@6f2c4a58 core.FriendsOf[3])>
 
-(run!! (muse/<$> inc (muse/<$> count (friends-of 3))))
+(muse/run!! (muse/<$> inc (muse/<$> count (friends-of 3))))
 ;; => 4
 ```
 
