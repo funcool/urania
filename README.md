@@ -28,9 +28,11 @@ Talks:
 A core problem of many systems is balancing expressiveness against performance.
 
 ```clojure
+(require '[clojure.set :refer [union intersection]])
+
 (defn num-common-friends
   [x y]
-  (count (set/intersection (friends-of x) (friends-of y))))
+  (count (intersection (friends-of x) (friends-of y))))
 ```
 
 Here, `(friends-of x)` and `(friends-of y)` are independent, and you want it to be fetched concurrently in a single batch. Furthermore, if `x` and `y` refer to the same person, you don't want to redundantly re-fetch their friend list.
@@ -38,9 +40,10 @@ Here, `(friends-of x)` and `(friends-of y)` are independent, and you want it to 
 *Muse* allows your data fetches to be implicitly concurrent:
 
 ```clojure
-(defn num-common-friends
-  [x y]
-  (run! (fmap count (fmap set/intersection (friends-of x) (friends-of y)))))
+(require '[muse.core :as muse])
+
+(defn num-common-friends [x y]
+  (muse/fmap (comp count intersection) (friends-of x) (friends-of y)))
 ```
 
 Mapping over lists will also run concurrently:
@@ -48,10 +51,10 @@ Mapping over lists will also run concurrently:
 ```clojure
 (defn friends-of-friends
   [id]
-  (run! (->> id
-             friends-of
-             (traverse friends-of)
-             (fmap (partial apply set/union)))))
+  (->> id
+       friends-of
+       (muse/traverse friends-of)
+       (muse/fmap (partial apply union)))))
 ```
 
 You can also use monad interface with `cats` library:
@@ -59,9 +62,9 @@ You can also use monad interface with `cats` library:
 ```clojure
 (defn get-post
   [id]
-  (run! (m/mlet [post (fetch-post id)
-                 author (fetch-user (:author-id post))]
-          (m/return (assoc post :author author)))))
+  (m/mlet [post (fetch-post id)
+           author (fetch-user (:author-id post))]
+    (m/return (assoc post :author author))))
 ```
 
 ## Usage
@@ -84,67 +87,97 @@ All functions are located in `muse.core`:
 
 Simple helper to emulate async request to the remote source with unpredictable response latency:
 
+In ClojureScript:
+
 ```clojure
-(require '[clojure.core.async :refer [go <!! <! timeout]])
+(require '[promesa.core :as prom])
 
 (defn remote-req [id result]
-  (let [wait (rand 1000)]
-    (println "-->" id ".." wait)
-    (go
-     (<! (timeout wait))
-     (println "<--" id)
-     result)))
+  (prom/promise
+    (fn [resolve]
+      (let [wait (rand 1000)]
+       (println "-->" id ".." wait)
+       (js/setTimeout #(do (println "<--" id)
+                           (resolve result))
+                      wait)))))
+```
+
+In Clojure:
+
+```clojure
+(require '[promissum.core :as prom])
+
+(defn remote-req [id result]
+  (prom/promise
+    (fn [resolve]
+      (let [wait (rand 1000)]
+       (println "-->" id ".." wait)
+       (Thread/sleep wait)
+       (println "<--" id)
+       (resolve result)))))
+
 ```
 
 Define data source (list of friends by given user id):
 
 ```clojure
-(require '[muse.core :refer :all])
+(require '[muse.core :as muse])
 
 (defrecord FriendsOf [id]
-  DataSource
+  muse/DataSource
   (fetch [_] (remote-req id (set (range id)))))
+
+(defn friends-of [id]
+  (FriendsOf. id))
 ```
 
 Run simplest scenario:
 
 ```clojure
-core> (FriendsOf. 10)
-#core.FriendsOf{:id 10}
-core> (run! (FriendsOf. 10)) ;; returns a channel
-#<ManyToManyChannel clojure.core.async.impl.channels.ManyToManyChannel@1aeaa839>
-core> (<!! (run! (FriendsOf. 10)))
---> 10 .. 342.97080768100585
-<-- 10
-#{0 7 1 4 6 3 2 9 5 8}
-core> (run!! (FriendsOf. 10)) ;; blocks until done
---> 10 .. 834.4564727277141
-<-- 10
-#{0 7 1 4 6 3 2 9 5 8}
+(friends-of 10)
+;; => #core.friends-of:id 10}
+
+(muse/run! (friends-of 10))
+;; --> 10 .. 877.3953983155727
+;; <-- 10
+;; => #<Promise {:status :pending}
+
+(deref (run! (friends-of 10)))
+;; --> 10 .. 412.97080768100585
+;; <-- 10
+;; => #{0 7 1 4 6 3 2 9 5 8}
+
+(run!! (friends-of 10)) ;; blocks until done
+;; --> 10 .. 834.4564727277141
+;; <-- 10
+;; => #{0 7 1 4 6 3 2 9 5 8}
 ```
 
 There is nothing special about it (yet), let's do something more interesting:
 
 ```clojure
-core> (fmap count (FriendsOf. 10))
-#<MuseMap (clojure.core$count@1b932280 core.FriendsOf[10])>
-core> (run!! (fmap count (FriendsOf. 10)))
---> 10 .. 844.5086574753595
-<-- 10
-10
-core> (fmap inc (fmap count (FriendsOf. 3)))
-#<MuseMap (clojure.core$comp$fn__4192@4275ef0b core.FriendsOf[3])>
-core> (run!! (fmap inc (fmap count (FriendsOf. 3))))
---> 3 .. 334.5374146247876
-<-- 3
-4
+(muse/fmap count (friends-of 10))
+;; => #<MuseMap (clojure.core$count@1b932280 core.friends-of10])>
+
+(muse/run!! (muse/fmap count (friends-of 10)))
+;; --> 10 .. 844.5086574753595
+;; <-- 10
+;; => 10
+
+(muse/fmap inc (muse/fmap count (friends-of 3)))
+;; => #<MuseMap (clojure.core$comp$fn__4192@4275ef0b core.friends-of3])>
+
+(run!! (muse/fmap inc (muse/fmap count (friends-of 3))))
+;; --> 3 .. 334.5374146247876
+;; <-- 3
+;; => 4
 ```
 
 Let's imagine we have another data source: users' activity score by given user id.
 
 ```clojure
 (defrecord ActivityScore [id]
-  DataSource
+  muse/DataSource
   (fetch [_] (remote-req id (inc id))))
 ```
 
@@ -152,80 +185,80 @@ Nested data fetches (you can see 2 levels of execution):
 
 ```clojure
 (defn first-friend-activity []
-  (->> (FriendsOf. 10)
-       (fmap sort)
-       (fmap first)
-       (flat-map #(ActivityScore. %))))
+  (->> (friends-of 10)
+       (muse/fmap sort)
+       (muse/fmap first)
+       (muse/flat-map #(ActivityScore. %))))
 
-core> (run!! (first-friend-activity))
---> 10 .. 576.5833162596521
-<-- 10
---> 0 .. 275.28637368204966
-<-- 0
-1
+(muse/run!! (first-friend-activity))
+;; --> 10 .. 576.5833162596521
+;; <-- 10
+;; --> 0 .. 275.28637368204966
+;; <-- 0
+;; => 1
 ```
 
 And now a few amazing facts.
 
 ```clojure
-(require '[clojure.set :refer [intersection]])
+(require '[clojure.set :refer [union intersection]])
 
 (defn num-common-friends [x y]
-  (fmap count (fmap intersection (FriendsOf. x) (FriendsOf. y))))
+  (muse/fmap (comp count intersection) (friends-of x) (friends-of y)))
 ```
 
 1) `muse` automatically runs fetches concurrently:
 
 ```clojure
-core> (run!! (num-common-friends 3 4))
---> 3 .. 374.6445696819365
---> 4 .. 162.1603407048976
-<-- 4
-<-- 3
-3
+(run!! (num-common-friends 3 4))
+;; --> 3 .. 50.56579162982433
+;; --> 4 .. 247.60281831534402
+;; <-- 3
+;; <-- 4
+;; => 3
 ```
 
 2) `muse` detects duplicated requests and caches results to avoid redundant work:
 
 ```clojure
-core> (run!! (num-common-friends 5 5))
---> 5 .. 781.2024344113081
-<-- 5
-5
+(muse/run!! (num-common-friends 5 5))
+;; --> 5 .. 781.2024344113081
+;; <-- 5
+;; => 5
 ```
 
 3) seq operations will also run concurrently:
 
 ```clojure
 (defn friends-of-friends [id]
-  (->> (FriendsOf. id)
-       (traverse #(FriendsOf. %))
-       (fmap (partial apply set/union))))
+  (->> (friends-of id)
+       (muse/traverse #(friends-of %))
+       (muse/fmap (partial apply union))))
 
-core> (run!! (friends-of-friends 5))
---> 5 .. 942.2654519658018
-<-- 5
---> 0 .. 429.0184498546441
---> 1 .. 316.54859989009765
---> 4 .. 365.7622736084006
---> 3 .. 752.5111238688877
---> 2 .. 618.4316806897967
-<-- 1
-<-- 4
-<-- 0
-<-- 2
-<-- 3
-#{0 1 3 2}
+(muse/run!! (friends-of-friends 5))
+;; --> 5 .. 972.1322804759812
+;; <-- 5
+;; --> 0 .. 498.6426390505534
+;; --> 1 .. 136.49940971567355
+;; --> 4 .. 874.777296180928
+;; <-- 1
+;; --> 3 .. 910.0740298270428
+;; <-- 0
+;; --> 2 .. 995.5441177163739
+;; <-- 4
+;; <-- 3
+;; <-- 2
+;; => #{0 1 3 2}
 ```
 
 4) you can implement `BatchedSource` protocol to tell `muse` how to batch requests:
 
 ```clojure
 (defrecord FriendsOf [id]
-  DataSource
+  muse/DataSource
   (fetch [_] (remote-req id (set (range id))))
 
-  BatchedSource
+  muse/BatchedSource
   (fetch-multi [_ users]
     (let [ids (cons id (map :id users))]
       (->> ids
@@ -233,12 +266,12 @@ core> (run!! (friends-of-friends 5))
            (into {})
            (remote-req ids)))))
 
-core> (run!! (frieds-of-friends 5))
---> 5 .. 13.055500150089605
-<-- 5
---> (0 1 4 3 2) .. 436.6121922156462
-<-- (0 1 4 3 2)
-#{0 1 3 2}
+(muse/run!! (friends-of-friends 5))
+;; --> 5 .. 783.7984574012655
+;; <-- 5
+;; --> (0 1 4 3 2) .. 420.575997272024
+;; <-- (0 1 4 3 2)
+;; => #{0 1 3 2}
 ```
 
 ## Misc
@@ -246,33 +279,35 @@ core> (run!! (frieds-of-friends 5))
 If you come from Haskell you will probably like shortcuts:
 
 ```clojure
-core> (<$> inc (<$> count (FriendsOf. 3)))
-#<MuseMap (clojure.core$comp$fn__4192@6f2c4a58 core.FriendsOf[3])>
-core> (run!! (<$> inc (<$> count (FriendsOf. 3))))
-4
+(muse/<$> inc (muse/<$> count (friends-of 3)))
+;; => #<MuseMap (clojure.core$comp$fn__4192@6f2c4a58 core.friends-of3])>
+
+(run!! (muse/<$> inc (muse/<$> count (friends-of 3))))
+;; => 4
 ```
 
 Custom response cache id:
 
 ```clojure
 (defrecord Timeline [username]
-  DataSource
+  muse/DataSource
   (fetch [_] (remote-req username (str username "'s timeline ")))
 
-  LabeledSource
+  muse/LabeledSource
   (resource-id [_] username))
 
-core> (fmap count (Timeline. "@kachayev"))
-#<MuseMap (clojure.core$count@1b932280 core.Timeline[@kachayev])>
-euroclojure.core> (run!! (fmap count (Timeline. "@kachayev")))
---> @kachayev .. 326.7199583652264
-<-- @kachayev
-20
-core> (run!! (fmap str (Timeline. "@kachayev") (Timeline. "@kachayev")))
+(muse/fmap count (Timeline. "@kachayev"))
+;; => #<MuseMap (clojure.core$count@1b932280 core.Timeline[@kachayev])>
+
+(muse/run!! (muse/fmap count (Timeline. "@kachayev")))
+;; --> @kachayev .. 929.3864355882571
+;; <-- @kachayev
+;; => 21
+
+(muse/run!! (muse/fmap str (Timeline. "@kachayev") (Timeline. "@kachayev")))
 --> @kachayev .. 809.035607308747
 <-- @kachayev
 "@kachayev's timeline @kachayev's timeline "
-
 ```
 
 Find more examples in `test` directory and check `muse-examples` repo.
@@ -289,101 +324,58 @@ Find more examples in `test` directory and check `muse-examples` repo.
 `MuseAST` monad is compatible with `cats` library, so you can use `mlet/return` interface as well as `fmap` & `bind` functions provided by `cats.core`:
 
 ```clojure
-(require '[muse.core :refer :all])
-(require '[clojure.core.async :refer [go <!!]])
 (require '[cats.core :as m])
 
 (defrecord Post [id]
-  DataSource
+  muse/DataSource
   (fetch [_] (remote-req id {:id id :author-id (inc id) :title "Muse"})))
 
 (defrecord User [id]
-  DataSource
+  muse/DataSource
   (fetch [_] (remote-req id {:id id :name "Alexey"})))
 
 (defn get-post [id]
-  (run! (m/mlet [post (Post. id)
-                 user (User. (:author-id post))]
-                (m/return (assoc post :author user)))))
+  (m/mlet [post (Post. id)
+           user (User. (:author-id post))]
+    (m/return (assoc post :author user))))
 
-core> (<!! (get-post 10))
---> 10 .. 254.02115766996968
-<-- 10
---> 11 .. 80.1692964764319
-<-- 11
-{:author {:id 11, :name "Alexey"}, :id 10, :author-id 11, :title "Muse"}
+(muse/run!! (get-post 10))
+;; --> 10 .. 813.5857785197163
+;; <-- 10
+;; --> 11 .. 449.5124897284112
+;; <-- 11
+;; => {:author {:id 11, :name "Alexey"}, :id 10, :author-id 11, :title "Muse"}
 ```
 
 ## Real-World Data Sources
 
+
 HTTP calls:
 
 ```clojure
-(require '[muse.core :refer :all])
-(require '[org.httpkit.client :as http])
-(require '[clojure.core.async :refer [chan put!]])
+(require '[muse.core :as muse])
+(require '[promissum.core :as prom])
 
 (defn async-get [url]
-  (let [c (chan 1)] (http/get url (fn [res] (put! c res))) c))
+  (prom/future (slurp url)))
 
 (defrecord Gist [id]
-  DataSource
+  muse/DataSource
   (fetch [_] (async-get (str "https://gist.github.com/" id))))
 
-(defn gist-size [{:keys [headers]}]
-  (get headers "Content-Size"))
+(muse/run!! (muse/fmap count (Gist. "21e7fe149bc5ae0bd878")))
+;; => 86085
 
-(run!! (fmap gist-size (Gist. "21e7fe149bc5ae0bd878")))
-
-(defn gist [id] (fmap gist-size (Gist. id)))
+(defn gist [id]
+  (muse/fmap count (Gist. id)))
 
 ;; will fetch 2 gists concurrently
-(run!! (fmap compare (gist "21e7fe149bc5ae0bd878") (gist "b5887f66e2985a21a466")))
+(muse/run!! (muse/fmap compare (gist "21e7fe149bc5ae0bd878") (gist "b5887f66e2985a21a466")))
+;; => 1
 ```
 
-SQL databases (see more detailed example here: ["Solving the N+1 Selects Problem with Muse"](https://github.com/funcool/muse/blob/master/docs/sql.md)):
+For an example of the use with database queries, see a detailed example here: ["Solving the N+1 Selects Problem with Muse"](https://github.com/funcool/muse/blob/master/docs/sql.md)).
 
-```clojure
-(require '[clojure.string :as s])
-(require '[clojure.core.async :as async :refer [<! go]])
-(require '[muse.core :refer :all])
-(require '[postgres.async :refer :all])
-
-(def posts-sql "select id, user, title, text from posts limit $1")
-(def user-sql "select id, name from users where id = $1")
-
-(defrecord Posts [limit]
-  DataSource
-  (fetch [_]
-    (async/map :rows [(execute! db [posts-sql limit])]))
-
-  LabeledSource
-  (resource-id [_] limit))
-
-(defrecord User [id]
-  DataSource
-  (fetch [_]
-    (async/map :rows [(execute! db [user-sql id])]))
-
-  BatchedSource
-  (fetch-multi [_ users]
-    (let [all-ids (cons id (map :id users))
-          query (str "select id, name from users where id IN (" (s/join "," all-ids) ")")]
-      (go
-        (let [{:keys [rows]} (<! (execute! db [query]))]
-          (into {} (map (fn [{:keys [id] :as row}] [id row]) rows)))))))
-
-(defn attach-author [{:keys [user] :as post}]
-  (fmap #(assoc post :user %) (User. user)))
-
-(defn fetch-posts [limit]
-  (traverse attach-author (Posts. limit)))
-
-;; will execute 2 SQL queries instead of 11
-(run!! (fetch-posts 10))
-```
-
-You can do the same tricks with [Redis](https://github.com/benashford/redis-async).
 
 ## How Does It Work?
 
