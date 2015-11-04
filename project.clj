@@ -26,6 +26,6 @@
                                   [org.clojure/clojurescript "1.7.145"]
                                   [org.clojure/core.async "0.1.346.0-17112a-alpha"]
                                   [funcool/cats "1.1.0-SNAPSHOT"]
-                                  [funcool/promissum "0.3.1"]
+                                  [funcool/promissum "0.3.3"]
                                   [funcool/promesa "0.5.1"]]
                    :plugins [[lein-cljsbuild "1.0.6"]]}})
