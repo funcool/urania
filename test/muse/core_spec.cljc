@@ -133,34 +133,33 @@
   muse/LabeledSource
   (resource-id [_] [:name seed]))
 
-;; note, that automatic name resolution doesn't work in ClojureScript
-#?(:clj
-   (defrecord TrackableId [tracker id]
-     muse/DataSource
-     (fetch [_] (prom/promise (fn [resolve]
-                                (swap! tracker inc)
-                                (resolve id))))))
+(defrecord TrackableId [tracker id]
+  muse/DataSource
+  (fetch [_] (prom/promise (fn [resolve]
+                             (swap! tracker inc)
+                             (resolve id)))))
 
 ;; w explicit source labeling
 #?(:clj
    (deftest caching-explicit-labels
      (let [t (atom 0)]
-       (assert-ast 40 (fmap + (Trackable. t 10) (Trackable. t 10) (Trackable. t 20)))
+       (assert-ast 40
+                   (fmap + (Trackable. t 10) (Trackable. t 10) (Trackable. t 20)))
        (is (= 2 @t)))
      (let [t1 (atom 0)]
-       (assert-ast 400 (fmap + (TrackableName. t1 100) (TrackableName. t1 100) (TrackableName. t1 200)))
-       (is (= 2 @t1)))))
+       (assert-ast 400
+                   (fmap + (TrackableName. t1 100) (TrackableName. t1 100) (TrackableName. t1 200)))
+       (is (= 2 @t1))))
 
-#?(:cljs
+   :cljs
    (deftest caching-explict-labels
      (let [t (atom 0)]
-       (assert-ast 40 (fmap + (Trackable. t 10) (Trackable. t 10) (Trackable. t 20))
-                   (fn [] (is (= 2 @t)))))))
-
-#?(:cljs
-   (deftest caching-explicit-labels-namespaced
+       (assert-ast 40
+                   (fmap + (Trackable. t 10) (Trackable. t 10) (Trackable. t 20))
+                   (fn [] (is (= 2 @t)))))
      (let [t1 (atom 0)]
-       (assert-ast 400 (fmap + (TrackableName. t1 100) (TrackableName. t1 100) (TrackableName. t1 200))
+       (assert-ast 400
+                   (fmap + (TrackableName. t1 100) (TrackableName. t1 100) (TrackableName. t1 200))
                    (fn [] (is (= 2 @t1)))))))
 
 ;; w/o explicit source labeling
@@ -168,40 +167,46 @@
    (deftest caching-implicit-labels
      (let [t2 (atom 0)]
        (assert-ast 100 (fmap * (TrackableId. t2 10) (TrackableId. t2 10)))
-       (is (= 1 @t2)))))
+       (is (= 1 @t2))))
+   :cljs
+   (deftest caching-implicit-labels
+     (let [t2 (atom 0)]
+       (assert-ast 100
+                   (fmap * (TrackableId. t2 10) (TrackableId. t2 10))
+                   (fn [] (is (= 1 @t2)))))))
 
 ;; different tree branches/levels
 #?(:clj
    (deftest caching-multiple-trees
      (let [t3 (atom 0)]
-       (assert-ast 140 (fmap +
-                             (Trackable. t3 50)
-                             (fmap (fn [[a b]] (+ a b))
-                                   (muse/collect [(Trackable. t3 40) (Trackable. t3 50)]))))
+       (assert-ast 140
+                   (fmap +
+                         (Trackable. t3 50)
+                         (fmap (fn [[a b]] (+ a b))
+                               (muse/collect [(Trackable. t3 40) (Trackable. t3 50)]))))
        (is (= 2 @t3)))
      (let [t4 (atom 0)]
-       (assert-ast 1400 (fmap +
-                              (TrackableName. t4 500)
-                              (fmap (fn [[a b]] (+ a b))
-                                    (muse/collect [(TrackableName. t4 400) (TrackableName. t4 500)]))))
-       (is (= 2 @t4)))))
-
-#?(:cljs
+       (assert-ast 1400
+                   (fmap +
+                         (TrackableName. t4 500)
+                         (fmap (fn [[a b]] (+ a b))
+                               (muse/collect [(TrackableName. t4 400) (TrackableName. t4 500)]))))
+       (is (= 2 @t4))))
+   :cljs
    (deftest caching-multiple-trees
      (let [t3 (atom 0)]
-       (assert-ast 140 (fmap +
-                             (Trackable. t3 50)
-                             (fmap (fn [[a b]] (+ a b))
-                                   (muse/collect [(Trackable. t3 40) (Trackable. t3 50)])))
-                   (fn [] (is (= 2 @t3)))))))
-
-#?(:cljs
-   (deftest caching-multiple-trees-namespaced
+       (assert-ast 140
+                   (fmap +
+                         (Trackable. t3 50)
+                         (fmap (fn [[a b]] (+ a b))
+                               (muse/collect [(Trackable. t3 40) (Trackable. t3 50)])))
+                   (fn [] (is (= 2 @t3)))))
      (let [t4 (atom 0)]
-       (assert-ast 1400 (fmap +
-                              (TrackableName. t4 500)
-                              (fmap (fn [[a b]] (+ a b))
-                                    (muse/collect [(TrackableName. t4 400) (TrackableName. t4 500)])))
+       (assert-ast 1400
+                   (fmap +
+                         (TrackableName. t4 500)
+                         (fmap (fn [[a b]] (+ a b))
+                               (muse/collect [(TrackableName. t4 400) (TrackableName. t4 500)])))
                    (fn [] (is (= 2 @t4)))))))
 
 ;; resouce should be identifiable: both Name and ID
