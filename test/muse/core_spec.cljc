@@ -52,17 +52,17 @@
                                (done)))))))
 
 (defn- assert-err
-  ([expected ast] (assert-err expected ast nil))
-  ([expected ast callback]
+  ([rx ast] (assert-err rx ast nil))
+  ([rx ast callback]
    #?(:clj
       (try
         (muse/run!! ast)
       (catch Exception e
-        (is (= expected (.getMessage e)))))
+        (is (re-find rx (.getMessage e)))))
       :cljs
       (async done (prom/catch (muse/run! ast)
                               (fn [r]
-                                (is (= expected (ex-message r)))
+                                (is (re-find rx (ex-message r)))
                                 (when callback (callback))
                                 (done)))))))
 
@@ -82,13 +82,13 @@
 (deftest error-propagation
   #?@(:clj
       [(is (prom/rejected? (muse/run! (DListFail. 30))))
-       (assert-err "clojure.lang.ExceptionInfo: Invalid size {:size 30}"
+       (assert-err #"Invalid size"
                    (fmap concat
                          (DList. 10)
                          (DListFail. 30)
                          (DList. 10)))]
       :cljs
-      [(assert-err "Invalid size"
+      [(assert-err #"Invalid size"
                    (fmap concat
                          (DList. 10)
                          (DListFail. 30)
@@ -210,17 +210,16 @@
                    (fn [] (is (= 2 @t4)))))))
 
 ;; resouce should be identifiable: both Name and ID
+(defrecord Country [iso-id]
+  muse/DataSource
+  (fetch [_] (prom/resolved {:regions [{:code 1} {:code 2} {:code 3}]})))
 
-#_(defrecord Country [iso-id]
-    muse/DataSource
-    (fetch [_] (prom/resolved {:regions [{:code 1} {:code 2} {:code 3}]})))
+(defrecord Region [country-iso-id url-id]
+  muse/DataSource
+  (fetch [_] (prom/resolved (inc url-id))))
 
-#_(defrecord Region [country-iso-id url-id]
-    muse/DataSource
-    (fetch [_] (prom/resolved (inc url-id))))
-
-#_(deftest disabled-caching
-    (is (nil? (try (run!! (->> (Country. "es")
-                               (fmap :regions)
-                               (traverse #(Region. "es" (:code %)))))
-                   (catch Exception e e)))))
+(deftest impossible-to-cache
+  (assert-err #"Resource is not identifiable"
+              (->> (Country. "es")
+                   (muse/fmap :regions)
+                   (muse/traverse #(Region. "es" (:code %))))))
