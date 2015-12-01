@@ -67,12 +67,12 @@ Let's create a datascript database and populate it with a few users and posts:
 
 Define `Posts` data source as a record that implements two protocols: `muse/DataSource` and `muse/LabeledSource`.
 
-`DataSource` defines the mechanism for fetching data from a remote source. The `fetch` function should return a promise and here we're using `promise` function from `promissum` (CLJ) package, only available in Clojure.
+`DataSource` defines the mechanism for fetching data from a remote source. The `fetch` function should return a promise and here we're using `promise` function from `promesa`, available in Clojure and ClojureScript.
 
 `LabeledSource` defines the data source's identifier to be used as a key in requests cache.
 
 ```clojure
-(require '[promissum.core :as prom])
+(require '[promesa.core :as prom])
 
 (def posts-query
   '[:find [?e ...]
@@ -88,7 +88,7 @@ Define `Posts` data source as a record that implements two protocols: `muse/Data
   muse/DataSource
   (fetch [_]
     (prom/promise
-     (fn [resolve]
+     (fn [resolve reject]
       (println "Fetching " limit " post(s)")
       (resolve (pull-posts limit)))))
 
@@ -129,14 +129,14 @@ Define `User` data source that additionally implements the `muse/BatchedSource` 
   muse/DataSource
   (fetch [_]
     (prom/promise
-     (fn [resolve]
+     (fn [resolve reject]
        (println "Fetching User #" id)
        (resolve (pull-user id)))))
 
   muse/BatchedSource
   (fetch-multi [_ users]
     (prom/promise
-     (fn [resolve]
+     (fn [resolve reject]
        (let [all-ids (into #{id} (map :id users))
              users (pull-users all-ids)
              ids (map :user/id users)]

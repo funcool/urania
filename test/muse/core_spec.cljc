@@ -1,13 +1,12 @@
 (ns muse.core-spec
   #?(:clj
      (:require [clojure.test :refer (deftest is)]
-               [promissum.core :as prom]
+               [promesa.core :as prom]
                [muse.core :as muse :refer (fmap flat-map)])
      :cljs
      (:require [cljs.test :refer-macros (deftest is async)]
                [promesa.core :as prom]
-               [muse.core :as muse :refer (fmap flat-map)]))
-  (:refer-clojure :exclude (run!)))
+               [muse.core :as muse :refer (fmap flat-map)])))
 
 (defrecord DList [size]
   muse/DataSource
@@ -111,7 +110,7 @@
 ;; attention! never do such mutations within "fetch" in real code
 (defrecord Trackable [tracker seed]
   muse/DataSource
-  (fetch [_] (prom/promise (fn [resolve]
+  (fetch [_] (prom/promise (fn [resolve reject]
                              (swap! tracker inc)
                              (resolve seed))))
   muse/LabeledSource
@@ -119,7 +118,7 @@
 
 (defrecord TrackableName [tracker seed]
   muse/DataSource
-  (fetch [_] (prom/promise (fn [resolve]
+  (fetch [_] (prom/promise (fn [resolve reject]
                              (swap! tracker inc)
                              (resolve seed))))
   muse/LabeledSource
@@ -127,7 +126,7 @@
 
 (defrecord TrackableId [tracker id]
   muse/DataSource
-  (fetch [_] (prom/promise (fn [resolve]
+  (fetch [_] (prom/promise (fn [resolve reject]
                              (swap! tracker inc)
                              (resolve id)))))
 

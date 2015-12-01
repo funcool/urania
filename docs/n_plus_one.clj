@@ -1,6 +1,6 @@
 (ns n-plus-one)
 
-(require '[promissum.core :as prom])
+(require '[promesa.core :as prom])
 (require '[muse.core :as muse])
 
 ;; db

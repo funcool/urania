@@ -86,7 +86,7 @@ In ClojureScript:
 In Clojure:
 
 ```clojure
-(require '[promissum.core :as prom])
+(require '[promesa.core :as prom])
 
 (defn remote-req [id result]
   (prom/promise
@@ -335,7 +335,7 @@ HTTP calls:
 
 ```clojure
 (require '[muse.core :as muse])
-(require '[promissum.core :as prom])
+(require '[promesa.core :as prom])
 
 (defn async-get [url]
   (prom/future (slurp url)))
@@ -378,7 +378,7 @@ For an example of the use with database queries, see a detailed example here: ["
 ## Known Restrictions
 
 * requires Java 8 when used from Clojure due to its use of `java.util.concurrent.CompletableFuture`
-* works with `promesa` (CLJS) and `promissum` (CLJ) libraries only (if you use other async mechanism, like `future`s you can easily turn your code to be compatible with promises)
+* works with the `promesa` library only (if you use other async mechanism, like `future`s you can easily turn your code to be compatible with promises)
 * assumes your operations with data sources are "side-effects free", so you don't really care about the order of fetches
 * yes, you need enough memory to store the whole data fetched during a single `run!` call (in case it's impossible you should probably look into other ways to solve your problem, i.e. data stream libraries)
 
