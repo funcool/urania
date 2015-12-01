@@ -1,16 +1,10 @@
 (ns muse.core
-  #?(:cljs (:require-macros [muse.core :refer (run!)]
-                            [cats.context :refer (with-context)])
-     :clj (:require [promissum.core :as prom]
-                    [clojure.string :as s]
-                    [cats.core :as m]
-                    [cats.context :as ctx :refer [with-context]]
-                    [cats.protocols :as proto]))
-  #?(:cljs (:require [promesa.core :as prom]
-                     [clojure.string :as s]
-                     [cats.core :as m]
-                     [cats.context :as ctx]
-                     [cats.protocols :as proto]))
+  #?(:cljs (:require-macros [muse.core :refer (run!)]))
+  (:require [promesa.core :as prom]
+            [clojure.string :as s]
+            [cats.core :as m]
+            [cats.context :as ctx :include-macros true]
+            [cats.protocols :as proto])
   (:refer-clojure :exclude (run!)))
 
 
@@ -229,12 +223,10 @@
 
 (defn fetch-many-caching
   [sources]
-  (prom/promise (fn [resolve]
-                    (let [all-sources (dedupe-sources sources)
-                          ids (map cache-id all-sources)
-                          fetches (map fetch all-sources)]
-                        (m/fmap #(resolve (zipmap ids %))
-                                (prom/all fetches))))))
+  (let [all-sources (dedupe-sources sources)
+        ids (map cache-id all-sources)
+        fetches (map fetch all-sources)]
+    (prom/then (prom/all fetches) #(zipmap ids %))))
 
 (defn fetch-one-caching
   [source]
@@ -259,45 +251,31 @@
 ;; AST interpreter
 
 (defn interpret-ast*
- [ast-node cache resolve reject]
+ [ast-node cache success! error!]
  (let [fetches (next-level ast-node)]
    (if-not (seq fetches)
      ;; xxx: should be MuseDone, assert & throw exception otherwise
      (if (done? ast-node)
-       (resolve (:value ast-node))
-       (recur (inject-into {:cache cache} ast-node) cache resolve reject))
+       (success! (:value ast-node))
+       (recur (inject-into {:cache cache} ast-node) cache success! error!))
      (let [by-type (group-by resource-name fetches)
            fetch-promises (map fetch-resource by-type)]
-       (with-context prom/promise-context
+       (ctx/with-context prom/promise-context
          (prom/branch (prom/all fetch-promises)
                       (fn [fetch-groups]
                         (let [next-cache (into cache fetch-groups)]
                           (interpret-ast* (inject-into {:cache next-cache} ast-node)
                                           next-cache
-                                          resolve
-                                          reject)))
-                      reject))))))
-
-#?(:clj
-   (defn deferred []
-     (let [p (prom/promise)
-           resolver (partial prom/deliver p)]
-       [p resolver resolver]))
-   :cljs
-   (defn deferred []
-     (let [vresolve (volatile! nil)
-           vreject (volatile! nil)
-           p (prom/promise (fn [resolve reject]
-                             (vreset! vresolve resolve)
-                             (vreset! vreject reject)))]
-       [p @vresolve @vreject])))
+                                          success!
+                                          error!)))
+                      error!))))))
 
 (defn interpret-ast
   [ast]
-  (let [[promise resolve reject] (deferred)
-        cache {}]
-    (interpret-ast* ast cache resolve reject)
-    promise))
+  (let [cache {}]
+    (prom/promise
+      (fn [resolve reject]
+        (interpret-ast* ast cache resolve reject)))))
 
 ;; Macros
 
@@ -311,7 +289,7 @@
       Returns a promise which will receive the result of
       the body when completed."
      [ast]
-     `(with-context ast-monad (interpret-ast ~ast))))
+     `(ctx/with-context ast-monad (interpret-ast ~ast))))
 
 #?(:clj
    (defmacro run!!

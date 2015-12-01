@@ -24,8 +24,8 @@
 
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.7.0"]
                                   [org.clojure/clojurescript "1.7.145"]
-                                  [funcool/cats "1.1.0-SNAPSHOT"]
+                                  [funcool/cats "1.2.0"]
                                   [funcool/promissum "0.3.3"]
-                                  [funcool/promesa "0.5.1"]
+                                  [funcool/promesa "0.6.0-SNAPSHOT"]
                                   [datascript "0.13.2"]]
-                   :plugins [[lein-cljsbuild "1.0.6"]]}})
+                   :plugins [[lein-cljsbuild "1.1.1"]]}})

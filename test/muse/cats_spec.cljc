@@ -2,7 +2,7 @@
   #?(:clj
      (:require [clojure.test :refer (deftest is)]
                [muse.core :as muse]
-               [promissum.core :as prom]
+               [promesa.core :as prom]
                [cats.core :as m]
                [cats.context :refer [with-context]])
      :cljs

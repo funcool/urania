@@ -80,19 +80,11 @@
   (assert-ast 60 (fmap sum-pair (flat-map mk-pair (muse/value 30)))))
 
 (deftest error-propagation
-  #?@(:clj
-      [(is (prom/rejected? (muse/run! (DListFail. 30))))
-       (assert-err #"Invalid size"
-                   (fmap concat
-                         (DList. 10)
-                         (DListFail. 30)
-                         (DList. 10)))]
-      :cljs
-      [(assert-err #"Invalid size"
-                   (fmap concat
-                         (DList. 10)
-                         (DListFail. 30)
-                         (DList. 10)))]))
+  (assert-err #"Invalid size"
+              (fmap concat
+                    (DList. 10)
+                    (DListFail. 30)
+                    (DList. 10))))
 
 (deftest higher-level-api
   (assert-ast [0 1] (muse/collect [(Single. 0) (Single. 1)]))
