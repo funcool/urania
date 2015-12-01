@@ -54,7 +54,7 @@
   muse/DataSource
   (fetch [_]
     (prom/promise
-     (fn [resolve]
+     (fn [resolve reject]
       (println "Fetching " limit " post(s)")
       (resolve (pull-posts limit)))))
 
@@ -97,14 +97,14 @@
   muse/DataSource
   (fetch [_]
     (prom/promise
-     (fn [resolve]
+     (fn [resolve reject]
        (println "Fetching User #" id)
        (resolve (pull-user id)))))
 
   muse/BatchedSource
   (fetch-multi [_ users]
     (prom/promise
-     (fn [resolve]
+     (fn [resolve reject]
        (let [all-ids (into #{id} (map :id users))
              users (pull-users all-ids)
              ids (map :user/id users)]

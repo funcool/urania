@@ -75,7 +75,7 @@ In ClojureScript:
 
 (defn remote-req [id result]
   (prom/promise
-    (fn [resolve]
+    (fn [resolve reject]
       (let [wait (rand 1000)]
        (println "-->" id ".." wait)
        (js/setTimeout #(do (println "<--" id)
@@ -90,7 +90,7 @@ In Clojure:
 
 (defn remote-req [id result]
   (prom/promise
-    (fn [resolve]
+    (fn [resolve reject]
       (let [wait (rand 1000)]
        (println "-->" id ".." wait)
        (Thread/sleep wait)
