@@ -225,8 +225,8 @@
   [sources]
   (let [all-sources (dedupe-sources sources)
         ids (map cache-id all-sources)
-        fetches (map fetch all-sources)]
-    (prom/then (prom/all fetches) #(zipmap ids %))))
+        responses (map fetch all-sources)]
+    (prom/then (prom/all responses) #(zipmap ids %))))
 
 (defn fetch-one-caching
   [source]
@@ -252,28 +252,27 @@
 
 (defn interpret-ast*
  [ast-node cache success! error!]
- (let [fetches (next-level ast-node)]
-   (if-not (seq fetches)
-     ;; xxx: should be MuseDone, assert & throw exception otherwise
+ (let [requests (next-level ast-node)]
+   (if-not (seq requests)
      (if (done? ast-node)
        (success! (:value ast-node))
-       (recur (inject-into {:cache cache} ast-node) cache success! error!))
-     (let [by-type (group-by resource-name fetches)
-           fetch-promises (map fetch-resource by-type)]
+       (let [next-ast (inject-into {:cache cache} ast-node)]
+         (recur next-ast cache success! error!)))
+     (let [requests-by-type (group-by resource-name requests)
+           responses (map fetch-resource requests-by-type)]
        (ctx/with-context prom/promise-context
-         (prom/branch (prom/all fetch-promises)
-                      (fn [fetch-groups]
-                        (let [next-cache (into cache fetch-groups)]
-                          (interpret-ast* (inject-into {:cache next-cache} ast-node)
-                                          next-cache
-                                          success!
-                                          error!)))
+         (prom/branch (prom/all responses)
+                      (fn [results]
+                        (let [next-cache (into cache results)
+                              next-ast (inject-into {:cache next-cache} ast-node)]
+                          (interpret-ast* next-ast next-cache success! error!)))
                       error!))))))
 
 (defn interpret-ast
-  [ast]
-  (let [cache {}]
-    (prom/promise
+  ([ast]
+   (interpret-ast ast {}))
+  ([ast cache]
+   (prom/promise
       (fn [resolve reject]
         (interpret-ast* ast cache resolve reject)))))
 
