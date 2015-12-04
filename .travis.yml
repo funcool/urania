@@ -2,8 +2,8 @@ language: clojure
 lein: lein2
 
 script:
-  - ./.travis/test-cljs.sh
-  - ./.travis/test-clj.sh
+  - lein test
+  - lein cljsbuild test
 
 jdk:
   - oraclejdk8
