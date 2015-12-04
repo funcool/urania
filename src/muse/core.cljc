@@ -1,15 +1,12 @@
 (ns muse.core
-  #?(:cljs (:require-macros [muse.core :refer (run!)]
-                            [cljs.core.async.macros :refer (go)])
-     :clj (:require [clojure.core.async :as async :refer (go <! >! <!!)]
-                    [clojure.string :as s]
-                    [cats.context :as ctx]
-                    [cats.protocols :as proto]))
-  #?(:cljs (:require [cljs.core.async :as async :refer (<! >!)]
-                     [clojure.string :as s]
-                     [cats.context :as ctx]
-                     [cats.protocols :as proto]))
+  #?(:cljs (:require-macros [muse.core :refer (run!)]))
+  (:require [promesa.core :as prom]
+            [clojure.string :as s]
+            [cats.core :as m]
+            [cats.context :as ctx :include-macros true]
+            [cats.protocols :as proto])
   (:refer-clojure :exclude (run!)))
+
 
 (declare fmap)
 (declare flat-map)
@@ -28,9 +25,9 @@
     (-mbind [_ mv f] (flat-map f mv))))
 
 (defprotocol DataSource
-  "Defines fetch method for the concrete data source. Relies on core.async
-   channel as a result value for fetch call (to return immediately to the
-   calling thread and perform fetch asynchronously). If defrecord is used
+  "Defines fetch method for the concrete data source. Relies on a promise
+   as a result value for fetch call (to return immediately to the caller
+   and perform fetch operations asynchronously). If defrecord is used
    to define data source, name of record class will be used to batch fetches
    from the same round of execution as well as to cache previous results
    and sent fetch requests. Use LabeledSource protocol when using reify to
@@ -48,29 +45,11 @@
 
 (defprotocol BatchedSource
   "Group few data fetches into a single request to remote source (i.e.
-   Redis MGET or SQL SELECT .. IN ..). Return channel and write to it
+   Redis MGET or SQL SELECT .. IN ..). Return promise and write to it
    map from ID to generic fetch response (as it was made without batching).
 
    See example here: https://github.com/funcool/muse/blob/master/docs/sql.md"
   (fetch-multi [this resources]))
-
-(defn- pair-name-id? [id]
-  (and (sequential? id) (= 2 (count id))))
-
-(defn- labeled-resource-name [v]
-  (when (satisfies? LabeledSource v)
-    (let [id (resource-id v)]
-      (when (pair-name-id? id)
-        (first id)))))
-
-(defn- resource-name [v]
-  (let [value (or (labeled-resource-name v)
-                  #?(:clj (.getName (.getClass v))))]
-    (assert (not (nil? value))
-            (str "Resource name is not identifiable: " v
-                 " Please, use record definition (for automatic resolve)"
-                 " or LabeledSource protocol (to specify it manually)"))
-    value))
 
 (defprotocol MuseAST
   (childs [this])
@@ -92,27 +71,24 @@
   (done? [_] true)
   (inject [this _] this))
 
-(defn labeled-cache-id
-  [res]
-  (let [id (resource-id res)]
-    (if (pair-name-id? id) (second id) id)))
+(defn- resource-name [v]
+  (pr-str (type v)))
 
 (defn cache-id
   [res]
   (let [id (if (satisfies? LabeledSource res)
-             (labeled-cache-id res)
+             (resource-id res)
              (:id res))]
     (assert (not (nil? id))
             (str "Resource is not identifiable: " res
                  " Please, use LabeledSource protocol or record with :id key"))
     id))
 
-(defn cache-path
-  [res]
-  [(resource-name res) (cache-id res)])
+(def cache-path (juxt resource-name cache-id))
 
 (defn cached-or [env res]
-  (let [cached (get-in env (cons :cache (cache-path res)) ::not-found)]
+  (let [cache (get env :cache)
+        cached (get-in cache (cache-path res) ::not-found)]
     (if (= ::not-found cached)
       res
       (MuseDone. cached))))
@@ -169,7 +145,7 @@
   (done? [_] false)
   (inject [_ env]
     (let [next (map (partial inject-into env) values)]
-      (if (= (count next) (count (filter done? next)))
+      (if (every? done? next)
         (let [result (apply f (map :value next))]
           ;; xxx: refactor to avoid dummy leaves creation
           (if (satisfies? DataSource result) (MuseMap. identity [result]) result))
@@ -195,6 +171,8 @@
   Object
   (toString [_] (print-node value)))
 
+;; High-level API
+
 (defn value
   [v]
   (assert (not (ast? v))
@@ -208,7 +186,7 @@
     (compose-ast muse f)
     (MuseMap. f (cons muse muses))))
 
-;; xxx: make it compatible with algo.generic and cats libraries
+;; xxx: make it compatible with algo.generic
 (defn flat-map
   [f muse & muses]
   (MuseFlatMap. f (cons muse muses)))
@@ -231,42 +209,74 @@
   [ast-node]
   (if (satisfies? DataSource ast-node)
     (list ast-node)
-    (if-let [values (childs ast-node)]
-      (mapcat next-level values)
-      '())))
+    (when-let [values (childs ast-node)]
+      (mapcat next-level values))))
 
-(defn fetch-group
-  [[resource-name [head & tail]]]
-  (go
-   [resource-name
-    (if (not (seq tail))
-      (let [res (<! (fetch head))] {(cache-id head) res})
-      (if (satisfies? BatchedSource head)
-        (<! (fetch-multi head tail))
-        (let [all-res (->> tail
-                           (cons head)
-                           (group-by cache-id)
-                           (map (fn [[_ v]] (first v))))]
-          ;; xxx: refactor
-          (<! (go (let [ids (map cache-id all-res)
-                        fetch-results (<! (async/map vector (map fetch all-res)))]
-                    (zipmap ids fetch-results)))))))]))
+;; fetching
+
+(defn dedupe-sources
+  [sources]
+  (->> sources
+       (group-by cache-id)
+       vals
+       (map first)))
+
+(defn fetch-many-caching
+  [sources]
+  (let [all-sources (dedupe-sources sources)
+        ids (map cache-id all-sources)
+        responses (map fetch all-sources)]
+    (prom/then (prom/all responses) #(zipmap ids %))))
+
+(defn fetch-one-caching
+  [source]
+  (prom/then (fetch source)
+             (fn [res]
+               {(cache-id source) res})))
+
+(defn fetch-sources
+  [[head & tail :as sources]]
+  (if-not (seq tail)
+    (fetch-one-caching head)
+    (if (satisfies? BatchedSource head)
+      (fetch-multi head tail)
+      (fetch-many-caching sources))))
+
+(defn fetch-resource
+  [[resource-name sources]]
+  (prom/then (fetch-sources sources)
+             (fn [resp]
+               [resource-name resp])))
+
+;; AST interpreter
+
+(defn interpret-ast*
+ [ast-node cache success! error!]
+ (let [requests (next-level ast-node)]
+   (if-not (seq requests)
+     (if (done? ast-node)
+       (success! (:value ast-node))
+       (let [next-ast (inject-into {:cache cache} ast-node)]
+         (recur next-ast cache success! error!)))
+     (let [requests-by-type (group-by resource-name requests)
+           responses (map fetch-resource requests-by-type)]
+       (ctx/with-context prom/promise-context
+         (prom/branch (prom/all responses)
+                      (fn [results]
+                        (let [next-cache (into cache results)
+                              next-ast (inject-into {:cache next-cache} ast-node)]
+                          (interpret-ast* next-ast next-cache success! error!)))
+                      error!))))))
 
 (defn interpret-ast
-  [ast]
-  (go
-   (loop [ast-node ast cache {}]
-     (let [fetches (next-level ast-node)]
-       (if (not (seq fetches))
-         ;; xxx: should be MuseDone, assert & throw exception otherwise
-         (if (done? ast-node)
-           (:value ast-node)
-           (recur (inject-into {:cache cache} ast-node) cache))
-         (let [by-type (group-by resource-name fetches)
-               ;; xxx: catch & propagate exceptions
-               fetch-groups (<! (async/map vector (map fetch-group by-type)))
-               next-cache (into cache fetch-groups)]
-           (recur (inject-into {:cache next-cache} ast-node) next-cache)))))))
+  ([ast]
+   (interpret-ast ast {}))
+  ([ast cache]
+   (prom/promise
+      (fn [resolve reject]
+        (interpret-ast* ast cache resolve reject)))))
+
+;; Macros
 
 #?(:clj
    (defmacro run!
@@ -275,15 +285,15 @@
       * fetch data sources async (when possible)
       * cache result of previously made fetches
       * batch calls to the same data source (when applicable)
-      Returns a channel which will receive the result of
+      Returns a promise which will receive the result of
       the body when completed."
      [ast]
      `(ctx/with-context ast-monad (interpret-ast ~ast))))
 
 #?(:clj
    (defmacro run!!
-     "takes a val from the channel returned by (run! ast).
+     "dereferences the the promise returned by (run! ast).
       Will block if nothing is available. Not available on
       ClojureScript."
      [ast]
-     `(<!! (run! ~ast))))
+     `(deref (run! ~ast))))

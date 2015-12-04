@@ -1,10 +1,11 @@
-# Solving the "N+1 Selects Problem" with Muse
+(ns n-plus-one)
 
-The so-called [N+1 selects problem](http://ocharles.org.uk/blog/posts/2014-03-24-queries-in-loops-without-a-care-in-the-world.html) is characterized by a set of queries in a loop.
+(require '[promesa.core :as prom])
+(require '[muse.core :as muse])
 
-Given that we have users and posts with authors, following the following datascript schema:
+;; db
+(require '[datascript.core :as d])
 
-```clojure
 (def schema
   {:user {:user/id {:db/cardinality :db.cardinality/one}
           :user/name {:db/cardinality :db.cardinality/one}}
@@ -12,33 +13,6 @@ Given that we have users and posts with authors, following the following datascr
           :post/user {:db/cardinality :db.cardinality/one}
           :post/title {:db/cardinality :db.cardinality/one}
           :post/text {:db/cardinality :db.cardinality/one}}})
-```
-
-We want to fetch the last `n` posts and, for each one, all of its author data. The most generic version of this code would perform one data fetch for `get-posts`, then another for each call to `get-user`; assuming each one is implemented as a query, that means **N+1 selects**.
-
-```clojure
-(defn attach-author [{user :post/user :as post}]
-  (assoc post :post/user (get-user user)))
-
-(defn latest-posts [n]
-  (map attach-author (get-posts n)))
-```
-
-
-Using similar code, the Muse implementation will perform exactly two data fetches: one to `get-posts` and one with all the `get-user` calls batched together.
-
-## The Data Sources
-
-First of all, import muse:
-
-```clojure
-(require '[muse.core :as muse])
-```
-
-Let's create a datascript database and populate it with a few users and posts:
-
-```clojure
-(require '[datascript.core :as d])
 
 (def db (d/create-conn schema))
 
@@ -63,16 +37,8 @@ Let's create a datascript database and populate it with a few users and posts:
                     :post/user user-id
                     :post/title (str  "A post with id #" post-id)
                     :post/text ""}]))
-```
 
-Define `Posts` data source as a record that implements two protocols: `muse/DataSource` and `muse/LabeledSource`.
-
-`DataSource` defines the mechanism for fetching data from a remote source. The `fetch` function should return a promise and here we're using `promise` function from `promesa`, available in Clojure and ClojureScript.
-
-`LabeledSource` defines the data source's identifier to be used as a key in requests cache.
-
-```clojure
-(require '[promesa.core :as prom])
+;; -- posts
 
 (def posts-query
   '[:find [?e ...]
@@ -95,15 +61,17 @@ Define `Posts` data source as a record that implements two protocols: `muse/Data
   muse/LabeledSource
   (resource-id [_] limit))
 
+
 (defn get-posts [limit]
   (Posts. limit))
-```
 
-Define `User` data source that additionally implements the `muse/BatchedSource` protocol.
+(comment
+  (muse/run!! (get-posts 10))
+  (muse/run!! (muse/fmap count (get-posts 10)))
+  (muse/run!! (muse/fmap #(map :post/id %) (get-posts 10))))
 
-`BatchedSource` protocol's `fetch-multi` function should return a promise as well as `fetch`. The difference is that `muse` assumes to read from this promise a mapping from id to individual fetch result. `Muse` library will automatically figure out all cases when it's possible to batch multiple individual requests into a single one.
+;; -- user
 
-```clojure
 (defn user-query [id]
   `[:find [?e]
     :where [?e :user/id ~id]])
@@ -145,15 +113,19 @@ Define `User` data source that additionally implements the `muse/BatchedSource` 
 
 (defn get-user [id]
   (User. id))
-```
 
-## Tying it All Together
+(comment
+  (muse/run!! (get-user 1))
+  (muse/run!! (get-user 2))
+  (muse/run!! (get-user 3))
+  (muse/run!! (get-user 4)))
 
-All that remains to make the original example work is to define `get-posts` and `get-user` helpers.
+(comment
+  ;; caching
+  (muse/run!! (muse/collect [(get-user 1) (get-user 1) (get-user 2)])))
 
-The naïve code that looks like it will do N+1 fetches will now do just two.
+;; -- putting it all together
 
-```clojure
 (defn attach-author [{user :post/user :as post}]
   (muse/fmap #(assoc post :post/user %)
              (get-user user)))
@@ -161,19 +133,6 @@ The naïve code that looks like it will do N+1 fetches will now do just two.
 (defn latest-posts [n]
   (muse/traverse attach-author
                  (get-posts n)))
-```
 
-The only change is that we have to place a call to `muse/run!`  interpreter (or its blocking version `muse/run!!`):
-
-```clojure
-(muse/run!! (latest-posts 10))
-;; Fetching  10  post(s)
-;; Fetching Users  #{1 4 6 5}
-```
-
-Note that muse detecst and eliminate duplicate user requests:
-
-```clojure
-(muse/run!! (muse/collect [(get-user 1) (get-user 1) (get-user 2)]))
-;; Fetching Users  #{1 2}
-```
+(comment
+  (muse/run!! (latest-posts 10)))

@@ -23,9 +23,8 @@
                                    :pretty-print true}}]}
 
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.7.0"]
-                                  [org.clojure/core.async "0.1.346.0-17112a-alpha"]
-                                  [funcool/cats "1.1.0-SNAPSHOT"]
-                                  [funcool/promissum "0.3.1"]
-                                  [funcool/promesa "0.5.1"]
-                                  [org.clojure/clojurescript "0.0-3308"]]
-                   :plugins [[lein-cljsbuild "1.0.6"]]}})
+                                  [org.clojure/clojurescript "1.7.145"]
+                                  [funcool/cats "1.2.0"]
+                                  [funcool/promesa "0.6.0"]
+                                  [datascript "0.13.2"]]
+                   :plugins [[lein-cljsbuild "1.1.1"]]}})
