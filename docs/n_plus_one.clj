@@ -1,7 +1,7 @@
 (ns n-plus-one)
 
 (require '[promesa.core :as prom])
-(require '[muse.core :as muse])
+(require '[urania.core :as u])
 
 ;; db
 (require '[datascript.core :as d])
@@ -51,14 +51,14 @@
   (d/pull-many @db '[*] (get-post-ids limit)))
 
 (defrecord Posts [limit]
-  muse/DataSource
+  u/DataSource
   (fetch [_]
     (prom/promise
      (fn [resolve reject]
       (println "Fetching " limit " post(s)")
       (resolve (pull-posts limit)))))
 
-  muse/LabeledSource
+  u/LabeledSource
   (resource-id [_] limit))
 
 
@@ -66,9 +66,9 @@
   (Posts. limit))
 
 (comment
-  (muse/run!! (get-posts 10))
-  (muse/run!! (muse/fmap count (get-posts 10)))
-  (muse/run!! (muse/fmap #(map :post/id %) (get-posts 10))))
+  (u/run!! (get-posts 10))
+  (u/run!! (u/fmap count (get-posts 10)))
+  (u/run!! (u/fmap #(map :post/id %) (get-posts 10))))
 
 ;; -- user
 
@@ -94,14 +94,14 @@
                (d/q users-query @db (set ids))))
 
 (defrecord User [id]
-  muse/DataSource
+  u/DataSource
   (fetch [_]
     (prom/promise
      (fn [resolve reject]
        (println "Fetching User #" id)
        (resolve (pull-user id)))))
 
-  muse/BatchedSource
+  u/BatchedSource
   (fetch-multi [_ users]
     (prom/promise
      (fn [resolve reject]
@@ -115,24 +115,24 @@
   (User. id))
 
 (comment
-  (muse/run!! (get-user 1))
-  (muse/run!! (get-user 2))
-  (muse/run!! (get-user 3))
-  (muse/run!! (get-user 4)))
+  (u/run!! (get-user 1))
+  (u/run!! (get-user 2))
+  (u/run!! (get-user 3))
+  (u/run!! (get-user 4)))
 
 (comment
   ;; caching
-  (muse/run!! (muse/collect [(get-user 1) (get-user 1) (get-user 2)])))
+  (u/run!! (u/collect [(get-user 1) (get-user 1) (get-user 2)])))
 
 ;; -- putting it all together
 
 (defn attach-author [{user :post/user :as post}]
-  (muse/fmap #(assoc post :post/user %)
-             (get-user user)))
+  (u/fmap #(assoc post :post/user %)
+          (get-user user)))
 
 (defn latest-posts [n]
-  (muse/traverse attach-author
-                 (get-posts n)))
+  (u/traverse attach-author
+             (get-posts n)))
 
 (comment
-  (muse/run!! (latest-posts 10)))
+  (u/run!! (latest-posts 10)))

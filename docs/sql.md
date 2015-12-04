@@ -1,4 +1,4 @@
-# Solving the "N+1 Selects Problem" with Muse
+# Solving the "N+1 Selects Problem" with Urania
 
 The so-called [N+1 selects problem](http://ocharles.org.uk/blog/posts/2014-03-24-queries-in-loops-without-a-care-in-the-world.html) is characterized by a set of queries in a loop.
 
@@ -25,14 +25,14 @@ We want to fetch the last `n` posts and, for each one, all of its author data. T
 ```
 
 
-Using similar code, the Muse implementation will perform exactly two data fetches: one to `get-posts` and one with all the `get-user` calls batched together.
+Using similar code, the Urania implementation will perform exactly two data fetches: one to `get-posts` and one with all the `get-user` calls batched together.
 
 ## The Data Sources
 
-First of all, import muse:
+First of all, import urania:
 
 ```clojure
-(require '[muse.core :as muse])
+(require '[urania.core :as u])
 ```
 
 Let's create a datascript database and populate it with a few users and posts:
@@ -65,11 +65,12 @@ Let's create a datascript database and populate it with a few users and posts:
                     :post/text ""}]))
 ```
 
-Define `Posts` data source as a record that implements two protocols: `muse/DataSource` and `muse/LabeledSource`.
+Define `Posts` data source as a record that implements two protocols: `u/DataSource` and `u/LabeledSource`.
 
 `DataSource` defines the mechanism for fetching data from a remote source. The `fetch` function should return a promise and here we're using `promise` function from `promesa`, available in Clojure and ClojureScript.
 
 `LabeledSource` defines the data source's identifier to be used as a key in requests cache.
+
 
 ```clojure
 (require '[promesa.core :as prom])
@@ -85,23 +86,23 @@ Define `Posts` data source as a record that implements two protocols: `muse/Data
   (d/pull-many @db '[*] (get-post-ids limit)))
 
 (defrecord Posts [limit]
-  muse/DataSource
+  u/DataSource
   (fetch [_]
     (prom/promise
      (fn [resolve reject]
       (println "Fetching " limit " post(s)")
       (resolve (pull-posts limit)))))
 
-  muse/LabeledSource
+  u/LabeledSource
   (resource-id [_] limit))
 
 (defn get-posts [limit]
   (Posts. limit))
 ```
 
-Define `User` data source that additionally implements the `muse/BatchedSource` protocol.
+Define `User` data source that additionally implements the `u/BatchedSource` protocol.
 
-`BatchedSource` protocol's `fetch-multi` function should return a promise as well as `fetch`. The difference is that `muse` assumes to read from this promise a mapping from id to individual fetch result. `Muse` library will automatically figure out all cases when it's possible to batch multiple individual requests into a single one.
+`BatchedSource` protocol's `fetch-multi` function should return a promise as well as `fetch`. The difference is that `urania` assumes to read from this promise a mapping from id to individual fetch result. `Urania` library will automatically figure out all cases when it's possible to batch multiple individual requests into a single one.
 
 ```clojure
 (defn user-query [id]
@@ -126,14 +127,14 @@ Define `User` data source that additionally implements the `muse/BatchedSource` 
                (d/q users-query @db (set ids))))
 
 (defrecord User [id]
-  muse/DataSource
+  u/DataSource
   (fetch [_]
     (prom/promise
      (fn [resolve reject]
        (println "Fetching User #" id)
        (resolve (pull-user id)))))
 
-  muse/BatchedSource
+  u/BatchedSource
   (fetch-multi [_ users]
     (prom/promise
      (fn [resolve reject]
@@ -155,25 +156,25 @@ The naïve code that looks like it will do N+1 fetches will now do just two.
 
 ```clojure
 (defn attach-author [{user :post/user :as post}]
-  (muse/fmap #(assoc post :post/user %)
-             (get-user user)))
+  (u/fmap #(assoc post :post/user %)
+          (get-user user)))
 
 (defn latest-posts [n]
-  (muse/traverse attach-author
-                 (get-posts n)))
+  (u/traverse attach-author
+              (get-posts n)))
 ```
 
-The only change is that we have to place a call to `muse/run!`  interpreter (or its blocking version `muse/run!!`):
+The only change is that we have to place a call to `urania/run!`  interpreter (or its blocking version `urania/run!!`):
 
 ```clojure
-(muse/run!! (latest-posts 10))
+(u/run!! (latest-posts 10))
 ;; Fetching  10  post(s)
 ;; Fetching Users  #{1 4 6 5}
 ```
 
-Note that muse detecst and eliminate duplicate user requests:
+Note that urania detects and eliminate duplicate user requests:
 
 ```clojure
-(muse/run!! (muse/collect [(get-user 1) (get-user 1) (get-user 2)]))
-;; Fetching Users  #{1 2}
+(u/run!! (u/collect [(get-user 1) (get-user 1) (get-user 2)]))
+-;; Fetching Users  #{1 2}
 ```

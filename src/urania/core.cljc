@@ -1,12 +1,11 @@
-(ns muse.core
-  #?(:cljs (:require-macros [muse.core :refer (run!)]))
+(ns urania.core
+  #?(:cljs (:require-macros [urania.core :refer (run!)]))
   (:require [promesa.core :as prom]
             [clojure.string :as s]
             [cats.core :as m]
             [cats.context :as ctx :include-macros true]
             [cats.protocols :as proto])
   (:refer-clojure :exclude (run!)))
-
 
 (declare fmap)
 (declare flat-map)
@@ -33,7 +32,7 @@
    and sent fetch requests. Use LabeledSource protocol when using reify to
    build data source instance.
 
-   See example here: https://github.com/funcool/muse/blob/master/docs/sql.md"
+   See example here: https://github.com/funcool/urania/blob/master/docs/sql.md"
   (fetch [this]))
 
 (defprotocol LabeledSource
@@ -48,10 +47,10 @@
    Redis MGET or SQL SELECT .. IN ..). Return promise and write to it
    map from ID to generic fetch response (as it was made without batching).
 
-   See example here: https://github.com/funcool/muse/blob/master/docs/sql.md"
+   See example here: https://github.com/funcool/urania/blob/master/docs/sql.md"
   (fetch-multi [this resources]))
 
-(defprotocol MuseAST
+(defprotocol AST
   (childs [this])
   (inject [this env])
   (done? [this]))
@@ -59,14 +58,14 @@
 (defprotocol ComposedAST
   (compose-ast [this f]))
 
-(defrecord MuseDone [value]
+(defrecord Done [value]
   proto/Contextual
   (-get-context [_] ast-monad)
 
   ComposedAST
-  (compose-ast [_ f2] (MuseDone. (f2 value)))
+  (compose-ast [_ f2] (Done. (f2 value)))
 
-  MuseAST
+  AST
   (childs [_] nil)
   (done? [_] true)
   (inject [this _] this))
@@ -91,7 +90,7 @@
         cached (get-in cache (cache-path res) ::not-found)]
     (if (= ::not-found cached)
       res
-      (MuseDone. cached))))
+      (Done. cached))))
 
 (defn inject-into [env node]
   (if (satisfies? DataSource node)
@@ -108,39 +107,39 @@
   [nodes]
   (s/join " " (map print-node nodes)))
 
-(deftype MuseMap [f values]
+(deftype Map [f values]
   proto/Contextual
   (-get-context [_] ast-monad)
 
   ComposedAST
-  (compose-ast [_ f2] (MuseMap. (comp f2 f) values))
+  (compose-ast [_ f2] (Map. (comp f2 f) values))
 
-  MuseAST
+  AST
   (childs [_] values)
   (done? [_] false)
   (inject [_ env]
     (let [next (map (partial inject-into env) values)]
       (if (= (count next) (count (filter done? next)))
-        (MuseDone. (apply f (map :value next)))
-        (MuseMap. f next))))
+        (Done. (apply f (map :value next)))
+        (Map. f next))))
 
   Object
   (toString [_] (str "(" f " " (print-childs values) ")")))
 
 (defn- ast?
   [ast]
-  (or (satisfies? MuseAST ast)
+  (or (satisfies? AST ast)
       (satisfies? DataSource ast)))
 
 (defn assert-ast!
   [ast]
   (assert (ast? ast)))
 
-(deftype MuseFlatMap [f values]
+(deftype FlatMap [f values]
   proto/Contextual
   (-get-context [_] ast-monad)
 
-  MuseAST
+  AST
   (childs [_] values)
   (done? [_] false)
   (inject [_ env]
@@ -148,25 +147,25 @@
       (if (every? done? next)
         (let [result (apply f (map :value next))]
           ;; xxx: refactor to avoid dummy leaves creation
-          (if (satisfies? DataSource result) (MuseMap. identity [result]) result))
-        (MuseFlatMap. f next))))
+          (if (satisfies? DataSource result) (Map. identity [result]) result))
+        (FlatMap. f next))))
 
   Object
   (toString [_] (str "(" f " " (print-childs values) ")")))
 
-(deftype MuseValue [value]
+(deftype Value [value]
   proto/Contextual
   (-get-context [_] ast-monad)
 
   ComposedAST
-  (compose-ast [_ f2] (MuseMap. f2 [value]))
+  (compose-ast [_ f2] (Map. f2 [value]))
 
-  MuseAST
+  AST
   (childs [_] [value])
   (done? [_] false)
   (inject [_ env]
     (let [next (inject-into env value)]
-      (if (done? next) (MuseDone. (:value next)) next)))
+      (if (done? next) (Done. (:value next)) next)))
 
   Object
   (toString [_] (print-node value)))
@@ -177,21 +176,19 @@
   [v]
   (assert (not (ast? v))
           (str "The value is already an AST: " v))
-  (MuseDone. v))
+  (Done. v))
 
 (defn fmap
   [f muse & muses]
   (if (and (not (seq muses))
            (satisfies? ComposedAST muse))
     (compose-ast muse f)
-    (MuseMap. f (cons muse muses))))
+    (Map. f (cons muse muses))))
 
-;; xxx: make it compatible with algo.generic
 (defn flat-map
   [f muse & muses]
-  (MuseFlatMap. f (cons muse muses)))
+  (FlatMap. f (cons muse muses)))
 
-;; xxx: use macro instead for auto-partial function building
 (def <$> fmap)
 (defn >>= [muse f] (flat-map f muse))
 
@@ -275,8 +272,6 @@
    (prom/promise
       (fn [resolve reject]
         (interpret-ast* ast cache resolve reject)))))
-
-;; Macros
 
 #?(:clj
    (defmacro run!

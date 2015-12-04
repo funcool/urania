@@ -1,6 +1,6 @@
-(defproject funcool/muse "0.4.0"
-  :description "A Clojure library that simplifies access to remote data (db, cache, http services)"
-  :url "https://github.com/funcool/muse"
+(defproject funcool/urania "0.1.0"
+  :description "Elegant and Efficient remote data access for Clojure(Script)"
+  :url "https://github.com/funcool/urania"
   :license {:name "The MIT License"
             :url "http://opensource.org/licenses/MIT"
             :distribution :repo}
@@ -17,7 +17,7 @@
                                    :source-map true
                                    :static-fns true
                                    :cache-analysis false
-                                   :main muse.runner
+                                   :main urania.runner
                                    :optimizations :none
                                    :target :nodejs
                                    :pretty-print true}}]}

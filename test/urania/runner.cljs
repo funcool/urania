@@ -1,14 +1,14 @@
-(ns muse.runner
+(ns urania.runner
   (:require [clojure.string :as str]
             [cljs.test :as test]
-            [muse.core-spec]
-            [muse.cats-spec]))
+            [urania.core-spec]
+            [urania.cats-spec]))
 
 (enable-console-print!)
 
 (defn main []
   (test/run-tests (test/empty-env)
-                  'muse.core-spec
-                  'muse.cats-spec))
+                  'urania.core-spec
+                  'urania.cats-spec))
 
 (set! *main-cli-fn* main)
