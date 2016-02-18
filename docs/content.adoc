@@ -68,7 +68,8 @@ we fetch the user data from a remote data source.
 
 Here, `(friends-of x)` and `(friends-of y)` are independent, and you want it to be fetched concurrently in a
 single batch. Furthermore, if `x` and `y` refer to the same person, you don't want to redundantly re-fetch
-their friend list.
+their friend list. What would the code look like if we applied the mentioned optimizations? We'd have to mix
+different concerns like caching and batching together with the business logic we perform with the data.
 
 *Urania* allows your data fetches to be implicitly concurrent with little changes to the original code:
 
@@ -84,12 +85,17 @@ their friend list.
 (u/run! (num-common-friends 1 2))
 ----
 
-As you may have noticed, Urania does so separating the data fetch declaration from its execution.
+As you may have noticed, Urania does so separating the data fetch declaration from its execution. It helps
+you keep your business logic free of low-level details while:
+
+- requesting data from multiple data sources concurrently
+- batching multiple requests to the same data source
+- caching repeated requests
 
 === Fetching data
 
 Data fetching is usually asynchronous and/or has the possibility of error, that's why Urania uses the
-Promise type available in the Promesa library as its result abstraction.
+Promise type available in the link:https://github.com/funcool/promesa[Promesa] library as its result abstraction.
 
 We'll start by writing a small function for emulating data sources with unpredictable latency. In
 ClojureScript:
@@ -124,6 +130,9 @@ and in Clojure:
        (resolve result)))))
 ----
 
+
+=== Data sources
+
 Now, we define our data sources as record that implement Urania's `DataSource` protocol. This protocol
 has a single function, `fetch`, that must return a promise.
 
@@ -140,16 +149,61 @@ has a single function, `fetch`, that must return a promise.
   (FriendsOf. id))
 ----
 
+Now let's try to fetch some data with Urania.
 
-=== Protocols
+We'll use ~urania.core/run!~ for running a fetch, it returns a promise.
 
-==== DataSource
+[source, clojure]
+----
+(u/run! (friends-of 10))
+;; -->[ 10 ] waiting 510.17118249719886
+;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
+;; #<Promise [~]>
+----
+
+We can block for the promise's result with ~deref~:
+
+[source, clojure]
+----
+(deref
+  (u/run! (friends-of 10)))
+;; -->[ 10 ] waiting 265.2789087406875
+;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
+;; #{0 7 1 4 6 3 2 9 5 8}
+----
+
+Or use Urania's ~run!!~ function. Note that we can only block in Clojure, not in ClojureScript.
+
+[source, clojure]
+----
+(u/run!! (friends-of 10))
+;; -->[ 10 ] waiting 265.2789087406875
+;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
+;; #{0 7 1 4 6 3 2 9 5 8}
+----
+
+==== Transforming fetched data
+
+We can use `urania.core/fmap` function for transforming results of a data source.
+
+[source, clojure]
+----
+(u/run!!
+  (u/fmap count (friends-of 10)))
+;; -->[ 10 ] waiting 463.370748219846
+;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
+;; 10
+;; => 10
+----
+
 ==== LabeledSource
 ==== BatchedSource
 
 == Examples
 
 === The N+1 selects problem
+
+
 === HTTP calls
 
 == More resources
