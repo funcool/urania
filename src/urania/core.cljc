@@ -211,17 +211,9 @@
 
 ;; fetching
 
-(defn dedupe-sources
-  [sources]
-  (->> sources
-       (group-by cache-id)
-       vals
-       (map first)))
-
 (defn fetch-many-caching
   [sources]
-  (let [all-sources (dedupe-sources sources)
-        ids (map cache-id all-sources)
+  (let [ids (map cache-id all-sources)
         responses (map fetch all-sources)]
     (prom/then (prom/all responses) #(zipmap ids %))))
 
@@ -239,9 +231,16 @@
       (fetch-multi head tail)
       (fetch-many-caching sources))))
 
+(defn dedupe-sources
+  [sources]
+  (->> sources
+       (group-by cache-id)
+       vals
+       (map first)))
+
 (defn fetch-resource
   [[resource-name sources]]
-  (prom/then (fetch-sources sources)
+  (prom/then (fetch-sources (dedupe-sources sources))
              (fn [resp]
                [resource-name resp])))
 
@@ -292,3 +291,4 @@
       ClojureScript."
      [ast]
      `(deref (run! ~ast))))
+
