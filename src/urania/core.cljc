@@ -1,27 +1,12 @@
 (ns urania.core
   #?(:cljs (:require-macros [urania.core :refer (run!)]))
   (:require [promesa.core :as prom]
-            [clojure.string :as s]
-            [cats.core :as m]
-            [cats.context :as ctx :include-macros true]
-            [cats.protocols :as proto])
+            [clojure.string :as s])
   (:refer-clojure :exclude (run!)))
 
 (declare fmap)
 (declare flat-map)
 (declare value)
-
-(def ast-monad
-  (reify
-    proto/Context
-    (-get-level [_] ctx/+level-default+)
-
-    proto/Functor
-    (-fmap [_ f mv] (fmap f mv))
-
-    proto/Monad
-    (-mreturn [_ v] (value v))
-    (-mbind [_ mv f] (flat-map f mv))))
 
 (defprotocol DataSource
   "Defines fetch method for the concrete data source. Relies on a promise
@@ -59,9 +44,6 @@
   (compose-ast [this f]))
 
 (defrecord Done [value]
-  proto/Contextual
-  (-get-context [_] ast-monad)
-
   ComposedAST
   (compose-ast [_ f2] (Done. (f2 value)))
 
@@ -108,9 +90,6 @@
   (s/join " " (map print-node nodes)))
 
 (deftype Map [f values]
-  proto/Contextual
-  (-get-context [_] ast-monad)
-
   ComposedAST
   (compose-ast [_ f2] (Map. (comp f2 f) values))
 
@@ -136,9 +115,6 @@
   (assert (ast? ast)))
 
 (deftype FlatMap [f values]
-  proto/Contextual
-  (-get-context [_] ast-monad)
-
   AST
   (childs [_] values)
   (done? [_] false)
@@ -154,9 +130,6 @@
   (toString [_] (str "(" f " " (print-childs values) ")")))
 
 (deftype Value [value]
-  proto/Contextual
-  (-get-context [_] ast-monad)
-
   ComposedAST
   (compose-ast [_ f2] (Map. f2 [value]))
 
@@ -213,8 +186,8 @@
 
 (defn fetch-many-caching
   [sources]
-  (let [ids (map cache-id all-sources)
-        responses (map fetch all-sources)]
+  (let [ids (map cache-id sources)
+        responses (map fetch sources)]
     (prom/then (prom/all responses) #(zipmap ids %))))
 
 (defn fetch-one-caching
@@ -256,13 +229,12 @@
          (recur next-ast cache success! error!)))
      (let [requests-by-type (group-by resource-name requests)
            responses (map fetch-resource requests-by-type)]
-       (ctx/with-context prom/promise-context
-         (prom/branch (prom/all responses)
+       (prom/branch (prom/all responses)
                       (fn [results]
                         (let [next-cache (into cache results)
                               next-ast (inject-into {:cache next-cache} ast-node)]
                           (interpret-ast* next-ast next-cache success! error!)))
-                      error!))))))
+                      error!)))))
 
 (defn interpret-ast
   ([ast]
