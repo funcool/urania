@@ -145,7 +145,7 @@
   Object
   (toString [_] (print-node value)))
 
-;; High-level API
+;; Combinators
 
 (defn value
   [v]
@@ -154,6 +154,10 @@
   (Done. v))
 
 (defn fmap
+  "Given a function and one or more data sources, return a new
+  data source that will apply the given function to the results.
+  When mapping over multiple data sources the results will be passed
+  as positional arguments to the given function."
   [f muse & muses]
   (if (and (not (seq muses))
            (satisfies? ComposedAST muse))
@@ -161,20 +165,29 @@
     (Map. f (cons muse muses))))
 
 (defn flat-map
+  "Given a function and one or more data sources, return a new data
+  source that will apply the given function to the results. The function
+  is assumed to return more data sources that will be flattened into a single
+  data source."
   [f muse & muses]
   (FlatMap. f (cons muse muses)))
 
 (defn collect
+  "Given a collection of data sources, return a new data source that will
+  contain a collection with the values of every data source when fetched."
   [muses]
   (if (seq muses)
     (apply (partial fmap vector) muses)
     (value [])))
 
 (defn traverse
+  "Given a function and a collection of data sources, apply the function once
+  to each data source and collect the resulting data source results into a data
+  source with every result."
   [f muses]
   (flat-map #(collect (map f %)) muses))
 
-;; fetching
+;; Fetching
 
 (defn- fetch-many-caching
   [sources]
@@ -218,7 +231,7 @@
     (when-let [values (-children ast-node)]
       (mapcat next-level values))))
 
-(defn- interpret-ast*
+(defn- interpret-ast
  [ast-node cache success! error!]
  (let [requests (next-level ast-node)]
    (if-not (seq requests)
@@ -232,33 +245,31 @@
                     (fn [results]
                       (let [next-cache (into cache results)
                             next-ast (inject-into {:cache next-cache} ast-node)]
-                        (interpret-ast* next-ast next-cache success! error!)))
+                        (interpret-ast next-ast next-cache success! error!)))
                     error!)))))
 
-(defn- interpret-ast
-  [ast cache]
-  (prom/promise
-   (fn [resolve reject]
-     (interpret-ast* ast cache resolve reject))))
+;; Public API
 
 (defn run!
   "Asynchronously executes the body, returning immediately to the
   calling thread. Rebuild body AST in order to:
 
-   * fetch data sources async (when possible)
+   * fetch data sources asynchronously (when possible)
    * cache result of previously made fetches
    * batch calls to the same data source (when applicable)
 
   Returns a promise which will receive the result of
   the body when completed."
   ([ast]
-   (interpret-ast ast {}))
+   (run! ast {}))
   ([ast cache]
-   (interpret-ast ast cache)))
+   (prom/promise
+    (fn [resolve reject]
+      (interpret-ast ast cache resolve reject)))))
 
 #?(:clj
    (defmacro run!!
-     "dereferences the the promise returned by (run! ast).
+     "Dereferences the the promise returned by (run! ast).
       Will block if nothing is available. Not available on
       ClojureScript."
      [ast]
