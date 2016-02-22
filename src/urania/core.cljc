@@ -79,16 +79,6 @@
     (cached-or env node)
     (-inject node env)))
 
-(defn- print-node
-  [node]
-  (if (satisfies? DataSource node)
-    (str (resource-name node) "[" (cache-id node) "]")
-    (with-out-str (print node))))
-
-(defn print-childs
-  [nodes]
-  (s/join " " (map print-node nodes)))
-
 (deftype Map [f values]
   ComposedAST
   (-compose-ast [_ f2] (Map. (comp f2 f) values))
@@ -100,10 +90,7 @@
     (let [next (map (partial inject-into env) values)]
       (if (= (count next) (count (filter -done? next)))
         (Done. (apply f (map :value next)))
-        (Map. f next))))
-
-  Object
-  (toString [_] (str "(" f " " (print-childs values) ")")))
+        (Map. f next)))))
 
 (defn- ast?
   [ast]
@@ -124,10 +111,7 @@
         (let [result (apply f (map :value next))]
           ;; xxx: refactor to avoid dummy leaves creation
           (if (satisfies? DataSource result) (Map. identity [result]) result))
-        (FlatMap. f next))))
-
-  Object
-  (toString [_] (str "(" f " " (print-childs values) ")")))
+        (FlatMap. f next)))))
 
 (deftype Value [value]
   ComposedAST
@@ -140,10 +124,7 @@
     (let [next (inject-into env value)]
       (if (-done? next)
         (Done. (:value next))
-        next)))
-
-  Object
-  (toString [_] (print-node value)))
+        next))))
 
 ;; Combinators
 
