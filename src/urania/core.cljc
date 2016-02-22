@@ -18,14 +18,14 @@
    build data source instance.
 
    See example here: https://github.com/funcool/urania/blob/master/docs/sql.md"
-  (fetch [this]))
+  (-fetch [this]))
 
 (defprotocol LabeledSource
   "The id of DataSource instance, used in cache, tracing and stat.
    If not specified library will use (:id data-source) as an identifier.
    In order to redefine resource-name you should return seq of 2 elements:
    '(name id) as a result of resource-id call"
-  (resource-id [this]))
+  (-resource-id [this]))
 
 (defprotocol BatchedSource
   "Group few data fetches into a single request to remote source (i.e.
@@ -33,53 +33,53 @@
    map from ID to generic fetch response (as it was made without batching).
 
    See example here: https://github.com/funcool/urania/blob/master/docs/sql.md"
-  (fetch-multi [this resources]))
+  (-fetch-multi [this resources]))
 
 (defprotocol AST
-  (childs [this])
-  (inject [this env])
-  (done? [this]))
+  (-children [this])
+  (-inject [this env])
+  (-done? [this]))
 
 (defprotocol ComposedAST
-  (compose-ast [this f]))
+  (-compose-ast [this f]))
 
 (defrecord Done [value]
   ComposedAST
-  (compose-ast [_ f2] (Done. (f2 value)))
+  (-compose-ast [_ f2] (Done. (f2 value)))
 
   AST
-  (childs [_] nil)
-  (done? [_] true)
-  (inject [this _] this))
+  (-children [_] nil)
+  (-done? [_] true)
+  (-inject [this _] this))
 
 (defn- resource-name [v]
   (pr-str (type v)))
 
-(defn cache-id
+(defn- cache-id
   [res]
   (let [id (if (satisfies? LabeledSource res)
-             (resource-id res)
+             (-resource-id res)
              (:id res))]
     (assert (not (nil? id))
             (str "Resource is not identifiable: " res
                  " Please, use LabeledSource protocol or record with :id key"))
     id))
 
-(def cache-path (juxt resource-name cache-id))
+(def ^:private cache-path (juxt resource-name cache-id))
 
-(defn cached-or [env res]
+(defn- cached-or [env res]
   (let [cache (get env :cache)
         cached (get-in cache (cache-path res) ::not-found)]
     (if (= ::not-found cached)
       res
       (Done. cached))))
 
-(defn inject-into [env node]
+(defn- inject-into [env node]
   (if (satisfies? DataSource node)
     (cached-or env node)
-    (inject node env)))
+    (-inject node env)))
 
-(defn print-node
+(defn- print-node
   [node]
   (if (satisfies? DataSource node)
     (str (resource-name node) "[" (cache-id node) "]")
@@ -91,14 +91,14 @@
 
 (deftype Map [f values]
   ComposedAST
-  (compose-ast [_ f2] (Map. (comp f2 f) values))
+  (-compose-ast [_ f2] (Map. (comp f2 f) values))
 
   AST
-  (childs [_] values)
-  (done? [_] false)
-  (inject [_ env]
+  (-children [_] values)
+  (-done? [_] false)
+  (-inject [_ env]
     (let [next (map (partial inject-into env) values)]
-      (if (= (count next) (count (filter done? next)))
+      (if (= (count next) (count (filter -done? next)))
         (Done. (apply f (map :value next)))
         (Map. f next))))
 
@@ -110,17 +110,17 @@
   (or (satisfies? AST ast)
       (satisfies? DataSource ast)))
 
-(defn assert-ast!
+(defn- assert-ast!
   [ast]
   (assert (ast? ast)))
 
 (deftype FlatMap [f values]
   AST
-  (childs [_] values)
-  (done? [_] false)
-  (inject [_ env]
+  (-children [_] values)
+  (-done? [_] false)
+  (-inject [_ env]
     (let [next (map (partial inject-into env) values)]
-      (if (every? done? next)
+      (if (every? -done? next)
         (let [result (apply f (map :value next))]
           ;; xxx: refactor to avoid dummy leaves creation
           (if (satisfies? DataSource result) (Map. identity [result]) result))
@@ -131,14 +131,16 @@
 
 (deftype Value [value]
   ComposedAST
-  (compose-ast [_ f2] (Map. f2 [value]))
+  (-compose-ast [_ f2] (Map. f2 [value]))
 
   AST
-  (childs [_] [value])
-  (done? [_] false)
-  (inject [_ env]
+  (-children [_] [value])
+  (-done? [_] false)
+  (-inject [_ env]
     (let [next (inject-into env value)]
-      (if (done? next) (Done. (:value next)) next)))
+      (if (-done? next)
+        (Done. (:value next))
+        next)))
 
   Object
   (toString [_] (print-node value)))
@@ -155,15 +157,12 @@
   [f muse & muses]
   (if (and (not (seq muses))
            (satisfies? ComposedAST muse))
-    (compose-ast muse f)
+    (-compose-ast muse f)
     (Map. f (cons muse muses))))
 
 (defn flat-map
   [f muse & muses]
   (FlatMap. f (cons muse muses)))
-
-(def <$> fmap)
-(defn >>= [muse f] (flat-map f muse))
 
 (defn collect
   [muses]
@@ -175,43 +174,36 @@
   [f muses]
   (flat-map #(collect (map f %)) muses))
 
-(defn next-level
-  [ast-node]
-  (if (satisfies? DataSource ast-node)
-    (list ast-node)
-    (when-let [values (childs ast-node)]
-      (mapcat next-level values))))
-
 ;; fetching
 
-(defn fetch-many-caching
+(defn- fetch-many-caching
   [sources]
   (let [ids (map cache-id sources)
-        responses (map fetch sources)]
+        responses (map -fetch sources)]
     (prom/then (prom/all responses) #(zipmap ids %))))
 
-(defn fetch-one-caching
+(defn- fetch-one-caching
   [source]
-  (prom/then (fetch source)
+  (prom/then (-fetch source)
              (fn [res]
                {(cache-id source) res})))
 
-(defn fetch-sources
+(defn- fetch-sources
   [[head & tail :as sources]]
   (if-not (seq tail)
     (fetch-one-caching head)
     (if (satisfies? BatchedSource head)
-      (fetch-multi head tail)
+      (-fetch-multi head tail)
       (fetch-many-caching sources))))
 
-(defn dedupe-sources
+(defn- dedupe-sources
   [sources]
   (->> sources
        (group-by cache-id)
        vals
        (map first)))
 
-(defn fetch-resource
+(defn- fetch-resource
   [[resource-name sources]]
   (prom/then (fetch-sources (dedupe-sources sources))
              (fn [resp]
@@ -219,42 +211,50 @@
 
 ;; AST interpreter
 
-(defn interpret-ast*
+(defn- next-level
+  [ast-node]
+  (if (satisfies? DataSource ast-node)
+    (list ast-node)
+    (when-let [values (-children ast-node)]
+      (mapcat next-level values))))
+
+(defn- interpret-ast*
  [ast-node cache success! error!]
  (let [requests (next-level ast-node)]
    (if-not (seq requests)
-     (if (done? ast-node)
+     (if (-done? ast-node)
        (success! (:value ast-node))
        (let [next-ast (inject-into {:cache cache} ast-node)]
          (recur next-ast cache success! error!)))
      (let [requests-by-type (group-by resource-name requests)
            responses (map fetch-resource requests-by-type)]
        (prom/branch (prom/all responses)
-                      (fn [results]
-                        (let [next-cache (into cache results)
-                              next-ast (inject-into {:cache next-cache} ast-node)]
-                          (interpret-ast* next-ast next-cache success! error!)))
-                      error!)))))
+                    (fn [results]
+                      (let [next-cache (into cache results)
+                            next-ast (inject-into {:cache next-cache} ast-node)]
+                        (interpret-ast* next-ast next-cache success! error!)))
+                    error!)))))
 
-(defn interpret-ast
+(defn- interpret-ast
+  [ast cache]
+  (prom/promise
+   (fn [resolve reject]
+     (interpret-ast* ast cache resolve reject))))
+
+(defn run!
+  "Asynchronously executes the body, returning immediately to the
+  calling thread. Rebuild body AST in order to:
+
+   * fetch data sources async (when possible)
+   * cache result of previously made fetches
+   * batch calls to the same data source (when applicable)
+
+  Returns a promise which will receive the result of
+  the body when completed."
   ([ast]
    (interpret-ast ast {}))
   ([ast cache]
-   (prom/promise
-      (fn [resolve reject]
-        (interpret-ast* ast cache resolve reject)))))
-
-#?(:clj
-   (defmacro run!
-     "Asynchronously executes the body, returning immediately to the
-      calling thread. Rebuild body AST in order to:
-      * fetch data sources async (when possible)
-      * cache result of previously made fetches
-      * batch calls to the same data source (when applicable)
-      Returns a promise which will receive the result of
-      the body when completed."
-     [ast]
-     `(ctx/with-context ast-monad (interpret-ast ~ast))))
+   (interpret-ast ast cache)))
 
 #?(:clj
    (defmacro run!!

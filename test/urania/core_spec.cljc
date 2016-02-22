@@ -10,27 +10,27 @@
 
 (defrecord DList [size]
   u/DataSource
-  (fetch [_] (prom/resolved (range size)))
+  (-fetch [_] (prom/resolved (range size)))
   u/LabeledSource
-  (resource-id [_] size))
+  (-resource-id [_] size))
 
 (defrecord DListFail [size]
   u/DataSource
-  (fetch [_] (prom/rejected (ex-info "Invalid size" {:size size})))
+  (-fetch [_] (prom/rejected (ex-info "Invalid size" {:size size})))
   u/LabeledSource
-  (resource-id [_] size))
+  (-resource-id [_] size))
 
 (defrecord Single [seed]
   u/DataSource
-  (fetch [_] (prom/resolved seed))
+  (-fetch [_] (prom/resolved seed))
   u/LabeledSource
-  (resource-id [_] seed))
+  (-resource-id [_] seed))
 
 (defrecord Pair [seed]
   u/DataSource
-  (fetch [_] (prom/resolved [seed seed]))
+  (-fetch [_] (prom/resolved [seed seed]))
   u/LabeledSource
-  (resource-id [_] seed))
+  (-resource-id [_] seed))
 
 (defn- mk-pair [seed] (Pair. seed))
 
@@ -110,23 +110,23 @@
 ;; attention! never do such mutations within "fetch" in real code
 (defrecord Trackable [tracker seed]
   u/DataSource
-  (fetch [_]
+  (-fetch [_]
     (swap! tracker inc)
     (prom/resolved seed))
   u/LabeledSource
-  (resource-id [_] #?(:clj seed :cljs [:Trackable seed])))
+  (-resource-id [_] #?(:clj seed :cljs [:Trackable seed])))
 
 (defrecord TrackableName [tracker seed]
   u/DataSource
-  (fetch [_]
+  (-fetch [_]
     (swap! tracker inc)
     (prom/resolved seed))
   u/LabeledSource
-  (resource-id [_] [:name seed]))
+  (-resource-id [_] [:name seed]))
 
 (defrecord TrackableId [tracker id]
   u/DataSource
-  (fetch [_]
+  (-fetch [_]
     (swap! tracker inc)
     (prom/resolved id)))
 
@@ -203,11 +203,11 @@
 
 (defrecord Country [iso-id]
   u/DataSource
-  (fetch [_] (prom/resolved {:regions [{:code 1} {:code 2} {:code 3}]})))
+  (-fetch [_] (prom/resolved {:regions [{:code 1} {:code 2} {:code 3}]})))
 
 (defrecord Region [country-iso-id url-id]
   u/DataSource
-  (fetch [_] (prom/resolved (inc url-id))))
+  (-fetch [_] (prom/resolved (inc url-id))))
 
 (deftest impossible-to-cache
   (assert-err #"Resource is not identifiable"
