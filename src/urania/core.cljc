@@ -1,5 +1,4 @@
 (ns urania.core
-  #?(:cljs (:require-macros [urania.core :refer (run!)]))
   (:require [promesa.core :as prom]
             [clojure.string :as s])
   #?(:clj (:import java.util.concurrent.ForkJoinPool))
