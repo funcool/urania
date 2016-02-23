@@ -9,7 +9,7 @@
 (declare value)
 
 (defprotocol Executor
-  (-submit [ex task]))
+  (-submit [ex task] "Perform a task."))
 
 (defprotocol DataSource
   "Defines fetch method for the concrete data source. Relies on a promise
@@ -58,7 +58,7 @@
 (defn- resource-name [v]
   (pr-str (type v)))
 
-(defn- cache-id
+(defn cache-id
   [res]
   (let [id (if (satisfies? LabeledSource res)
              (-resource-id res)
@@ -68,7 +68,7 @@
                  " Please, use LabeledSource protocol or record with :id key"))
     id))
 
-(def ^:private cache-path (juxt resource-name cache-id))
+(def cache-path (juxt resource-name cache-id))
 
 (defn- cached-or [env res]
   (let [cache (get env :cache)
