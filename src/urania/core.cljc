@@ -2,11 +2,15 @@
   #?(:cljs (:require-macros [urania.core :refer (run!)]))
   (:require [promesa.core :as prom]
             [clojure.string :as s])
+  #?(:clj (:import java.util.concurrent.ForkJoinPool))
   (:refer-clojure :exclude (run!)))
 
 (declare fmap)
 (declare flat-map)
 (declare value)
+
+(defprotocol Executor
+  (-submit [ex task]))
 
 (defprotocol DataSource
   "Defines fetch method for the concrete data source. Relies on a promise
@@ -170,25 +174,37 @@
 
 ;; Fetching
 
+(defn- run-fetch
+  [executor muse]
+  (prom/promise
+   (fn [resolve reject]
+     (-submit executor #(prom/branch (-fetch muse) resolve reject)))))
+
+(defn- run-fetch-multi
+  [executor muse muses]
+  (prom/promise
+   (fn [resolve reject]
+     (-submit executor #(prom/branch (-fetch-multi muse muses) resolve reject)))))
+
 (defn- fetch-many-caching
-  [sources]
+  [executor sources]
   (let [ids (map cache-id sources)
-        responses (map -fetch sources)]
+        responses (map (partial run-fetch executor) sources)]
     (prom/then (prom/all responses) #(zipmap ids %))))
 
 (defn- fetch-one-caching
-  [source]
-  (prom/then (-fetch source)
+  [executor source]
+  (prom/then (run-fetch executor source)
              (fn [res]
                {(cache-id source) res})))
 
 (defn- fetch-sources
-  [[head & tail :as sources]]
+  [executor [head & tail :as sources]]
   (if-not (seq tail)
-    (fetch-one-caching head)
+    (fetch-one-caching executor head)
     (if (satisfies? BatchedSource head)
-      (-fetch-multi head tail)
-      (fetch-many-caching sources))))
+      (run-fetch-multi executor head tail)
+      (fetch-many-caching executor sources))))
 
 (defn- dedupe-sources
   [sources]
@@ -198,8 +214,8 @@
        (map first)))
 
 (defn- fetch-resource
-  [[resource-name sources]]
-  (prom/then (fetch-sources (dedupe-sources sources))
+  [executor [resource-name sources]]
+  (prom/then (fetch-sources executor (dedupe-sources sources))
              (fn [resp]
                [resource-name resp])))
 
@@ -213,23 +229,37 @@
       (mapcat next-level values))))
 
 (defn- interpret-ast
- [ast-node cache success! error!]
- (let [requests (next-level ast-node)]
-   (if-not (seq requests)
-     (if (-done? ast-node)
-       (success! (:value ast-node))
-       (let [next-ast (inject-into {:cache cache} ast-node)]
-         (recur next-ast cache success! error!)))
-     (let [requests-by-type (group-by resource-name requests)
-           responses (map fetch-resource requests-by-type)]
-       (prom/branch (prom/all responses)
-                    (fn [results]
-                      (let [next-cache (into cache results)
-                            next-ast (inject-into {:cache next-cache} ast-node)]
-                        (interpret-ast next-ast next-cache success! error!)))
-                    error!)))))
+  [ast-node {:keys [cache executor] :as opts} success! error!]
+  (let [requests (next-level ast-node)]
+    (if-not (seq requests)
+      (if (-done? ast-node)
+        (success! (:value ast-node))
+        (let [next-ast (inject-into {:cache cache} ast-node)]
+          (recur next-ast opts success! error!)))
+      (let [requests-by-type (group-by resource-name requests)
+            responses (map (partial fetch-resource executor) requests-by-type)]
+        (prom/branch (prom/all responses)
+                     (fn [results]
+                       (let [next-cache (into cache results)
+                             next-ast (inject-into {:cache next-cache} ast-node)
+                             next-opts (assoc opts :cache next-cache)]
+                         (interpret-ast next-ast next-opts success! error!)))
+                     error!)))))
 
 ;; Public API
+
+(def default-executor
+  #?(:clj
+     (reify Executor
+       (-submit [_ task]
+         (.submit (ForkJoinPool/commonPool) task)))
+     :cljs
+     (reify Executor
+       (-submit [_ task]
+         (task)))))
+
+(def run-defaults {:cache {}
+                   :executor default-executor})
 
 (defn run!
   "Asynchronously executes the body, returning immediately to the
@@ -242,17 +272,17 @@
   Returns a promise which will receive the result of
   the body when completed."
   ([ast]
-   (run! ast {}))
-  ([ast cache]
+   (run! ast run-defaults))
+  ([ast opts]
    (prom/promise
     (fn [resolve reject]
-      (interpret-ast ast cache resolve reject)))))
+      (interpret-ast ast (merge run-defaults opts) resolve reject)))))
 
-#?(:clj
-   (defmacro run!!
-     "Dereferences the the promise returned by (run! ast).
+#? (:clj
+    (defmacro run!!
+      "Dereferences the the promise returned by (run! ast).
       Will block if nothing is available. Not available on
       ClojureScript."
-     [ast]
-     `(deref (run! ~ast))))
+      [ast]
+      `(deref (run! ~ast))))
 
