@@ -9,6 +9,7 @@
 (declare value)
 
 (defprotocol Executor
+  "A protocol for a policy for executing tasks."
   (-submit [ex task] "Perform a task."))
 
 (defprotocol DataSource
