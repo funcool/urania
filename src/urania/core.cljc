@@ -277,11 +277,10 @@
     (fn [resolve reject]
       (interpret-ast ast (merge run-defaults opts) resolve reject)))))
 
-#? (:clj
-    (defmacro run!!
-      "Dereferences the the promise returned by (run! ast).
-      Will block if nothing is available. Not available on
-      ClojureScript."
-      [ast]
-      `(deref (run! ~ast))))
 
+(def run!!
+  ^{:doc
+    "Dereferences the the promise returned by (run! ast).
+     Will block if nothing is available. Not available on
+     ClojureScript."}
+  (comp deref run!))
