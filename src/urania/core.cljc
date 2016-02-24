@@ -55,7 +55,7 @@
   (-done? [_] true)
   (-inject [this _] this))
 
-(defn- resource-name [v]
+(defn resource-name [v]
   (pr-str (type v)))
 
 (defn cache-id
