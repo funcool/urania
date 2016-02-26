@@ -82,9 +82,9 @@ different concerns like caching and batching together with the business logic we
 (require '[urania.core :as u])
 
 (defn count-common-friends [x y]
-  (u/fmap count-common
-          (friends-of x)
-          (friends-of y)))
+  (u/map count-common
+         (friends-of x)
+         (friends-of y)))
 
 (u/run! (count-common-friends 1 2))
 ----
@@ -195,12 +195,12 @@ ClojureScript.
 
 ==== Transforming fetched data
 
-We can use `urania.core/fmap` function for transforming results of a data source.
+We can use `urania.core/map` function for transforming results of a data source.
 
 [source, clojure]
 ----
 (u/run!!
-  (u/fmap count (friends-of 10)))
+  (u/map count (friends-of 10)))
 ;; -->[ 10 ] waiting 463.370748219846
 ;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
 ;; => 10
@@ -211,7 +211,7 @@ And compose multiple transformations together:
 [source, clojure]
 ----
 (u/run!!
-  (u/fmap dec (u/fmap count (friends-of 10))))
+  (u/map dec (u/map count (friends-of 10))))
 ;; -->[ 10 ] waiting 463.370748219846
 ;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
 ;; => 9
@@ -221,7 +221,7 @@ And compose multiple transformations together:
 
 Let's imagine we have another information we want to fetch: a user's activity score. For fetching
 a user's activity score we'll need to fetch the user first, and `urania` provides a combinator
-for doing so: `urania.core/flat-map`.
+for doing so: `urania.core/mapcat`.
 
 First of all, let's define our activity score data source:
 
@@ -239,15 +239,15 @@ First of all, let's define our activity score data source:
 ----
 
 Now we want to fetch the activity scores of the first friend of a certain user. We need to know intermediate
-results of a fetch to continue, so we use `urania.core/flat-map`:
+results of a fetch to continue, so we use `urania.core/mapcat`:
 
 [source, clojure]
 ----
 (defn first-friends-activity
   [id]
-  (u/flat-map (fn [friends]
-                (activity (first friends)))
-              (friends-of id)))
+  (u/mapcat (fn [friends]
+              (activity (first friends)))
+            (friends-of id)))
 ----
 
 We can now run this fetch:
@@ -271,9 +271,9 @@ Let's use it to collect the activity score for every user:
 ----
 (defn friends-activity
   [id]
-  (u/flat-map (fn [friends]
-                  (u/collect (map activity friends)))
-                (friends-of id)))
+  (u/mapcat (fn [friends]
+              (u/collect (map activity friends)))
+            (friends-of id)))
 ----
 
 If we run it:

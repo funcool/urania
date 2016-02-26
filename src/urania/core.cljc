@@ -4,7 +4,7 @@
   #?(:clj
      (:import java.util.concurrent.ForkJoinPool
               java.util.concurrent.Executor))
-  (:refer-clojure :exclude (run!)))
+  (:refer-clojure :exclude (map mapcat run!)))
 
 (defprotocol IExecutor
   "A policy for executing tasks."
@@ -54,9 +54,9 @@
   (-children [_] values)
   (-done? [_] false)
   (-inject [_ env]
-    (let [next (map (partial inject-into env) values)]
+    (let [next (clojure.core/map (partial inject-into env) values)]
       (if (= (count next) (count (filter -done? next)))
-        (Done. (apply f (map :value next)))
+        (Done. (apply f (clojure.core/map :value next)))
         (Map. f next)))))
 
 (defn- ast?
@@ -73,9 +73,9 @@
   (-children [_] values)
   (-done? [_] false)
   (-inject [_ env]
-    (let [next (map (partial inject-into env) values)]
+    (let [next (clojure.core/map (partial inject-into env) values)]
       (if (every? -done? next)
-        (let [result (apply f (map :value next))]
+        (let [result (apply f (clojure.core/map :value next))]
           ;; xxx: refactor to avoid dummy leaves creation
           (if (satisfies? DataSource result) (Map. identity [result]) result))
         (FlatMap. f next)))))
@@ -122,7 +122,7 @@
           (str "The value is already an AST: " v))
   (Done. v))
 
-(defn fmap
+(defn map
   "Given a function and one or more data sources, return a new
   data source that will apply the given function to the results.
   When mapping over multiple data sources the results will be passed
@@ -133,7 +133,7 @@
     (-compose-ast muse f)
     (Map. f (cons muse muses))))
 
-(defn flat-map
+(defn mapcat
   "Given a function and one or more data sources, return a new data
   source that will apply the given function to the results. The function
   is assumed to return more data sources that will be flattened into a single
@@ -146,7 +146,7 @@
   contain a collection with the values of every data source when fetched."
   [muses]
   (if (seq muses)
-    (apply (partial fmap vector) muses)
+    (apply (partial map vector) muses)
     (value [])))
 
 (defn traverse
@@ -154,7 +154,7 @@
   to each data source and collect the resulting data source results into a data
   source with every result."
   [f muses]
-  (flat-map #(collect (map f %)) muses))
+  (mapcat #(collect (clojure.core/map f %)) muses))
 
 ;; Fetching
 
@@ -172,8 +172,8 @@
 
 (defn- fetch-many-caching
   [opts sources]
-  (let [ids (map cache-id sources)
-        responses (map (partial run-fetch opts) sources)]
+  (let [ids (clojure.core/map cache-id sources)
+        responses (clojure.core/map (partial run-fetch opts) sources)]
     (prom/then (prom/all responses) #(zipmap ids %))))
 
 (defn- fetch-one-caching
@@ -195,7 +195,7 @@
   (->> sources
        (group-by cache-id)
        vals
-       (map first)))
+       (clojure.core/map first)))
 
 (defn- fetch-resource
   [opts [resource-name sources]]
@@ -210,7 +210,7 @@
   (if (satisfies? DataSource ast-node)
     (list ast-node)
     (when-let [values (-children ast-node)]
-      (mapcat next-level values))))
+      (clojure.core/mapcat next-level values))))
 
 (defn- interpret-ast
   [ast-node {:keys [cache] :as opts} success! error!]
@@ -221,7 +221,7 @@
         (success! [(:value ast-node) cache])
         (recur ast-node opts success! error!))
       (let [requests-by-type (group-by resource-name requests)
-            responses (map (partial fetch-resource opts) requests-by-type)]
+            responses (clojure.core/map (partial fetch-resource opts) requests-by-type)]
         (prom/branch (prom/all responses)
                      (fn [results]
                        (let [next-cache (into cache results)
