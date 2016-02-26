@@ -35,12 +35,15 @@
 (defn- id [v] (u/value v))
 
 (defn- assert-ast
-  ([expected ast] (assert-ast expected ast nil))
+  ([expected ast]
+   (assert-ast expected ast nil {}))
   ([expected ast callback]
+   (assert-ast expected ast callback {}))
+  ([expected ast callback opts]
    #?(:clj
-      (is (= expected (u/run!! ast)))
+      (is (= expected (u/run!! ast opts)))
       :cljs
-      (async done (prom/then (u/run! ast)
+      (async done (prom/then (u/run! ast opts)
                              (fn [r]
                                (is (= expected r))
                                (when callback (callback))
@@ -230,3 +233,26 @@
                              (fmap (fn [[a b]] (+ a b))
                                    (u/collect [(BatchedTrackable. t3 40) (BatchedTrackable. t3 50)])))
                    (fn [] (is (= 1 @t3)))))))
+
+;; executors
+
+#?(:clj
+   (deftest accepts-any-java-util-concurrent-executor
+     (is (= 42 (u/run!! (u/fmap + (Single. 21) (Single. 21))
+                        {:executor (java.util.concurrent.Executors/newFixedThreadPool 2)})))))
+
+(def sync-executor
+  (reify u/IExecutor
+    (-execute [_ task]
+      (task))))
+
+#?(:clj
+   (deftest accepts-a-custom-executor-implementation
+     (is (= 42 (u/run!! (u/fmap + (Single. 21) (Single. 21))
+                        {:executor sync-executor}))))
+   :cljs
+   (deftest accepts-a-custom-executor-implementation
+     (assert-ast 42
+                 (u/fmap + (Single. 21) (Single. 21))
+                 identity
+                 {:executor sync-executor})))
