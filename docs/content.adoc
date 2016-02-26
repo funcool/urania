@@ -52,7 +52,12 @@ we fetch the user data from a remote data source.
 
 [source, clojure]
 ----
-(require '[clojure.set :refer [union intersection]])
+(require '[clojure.set :refer [intersection]])
+
+(defn friends-of
+  [id]
+  ;; ...
+  )
 
 (defn count-common
   [a b]
@@ -60,8 +65,7 @@ we fetch the user data from a remote data source.
 
 (defn count-common-friends
   [x y]
-  (count-common (friends-of x)
-		(friends-of y)))
+  (count-common (friends-of x) (friends-of y)))
 
 (count-common-friends 1 2)
 ----
@@ -71,7 +75,7 @@ or in a single request. Furthermore, if `x` and `y` refer to the same person, yo
 their friend list. What would the code look like if we applied the mentioned optimizations? We'd have to mix
 different concerns like caching and batching together with the business logic we perform with the data.
 
-*Urania* allows your data fetches to be implicitly concurrent with little changes to the original code:
+*Urania* allows your data fetches to be implicitly concurrent with little changes to the original code, here's a spoiler:
 
 [source, clojure]
 ----
@@ -88,19 +92,19 @@ different concerns like caching and batching together with the business logic we
 As you may have noticed, Urania does so separating the data fetch declaration from its execution. When running
 your fetches, `urania` will:
 
-- reques data from multiple data sources concurrently
+- request data from multiple data sources concurrently
 - batch multiple requests to the same data source
 - cache repeated requests
 
-=== Fetching data
+=== Fetching data from remote sources
 
-Data fetching is usually asynchronous and/or has the possibility of error, that's why Urania uses the
+Reading data from remote data sources is usually asynchronous and/or has the possibility of error, that's why `urania` uses the
 Promise type available in the link:https://github.com/funcool/promesa[Promesa] library as its result abstraction.
 
 We'll start by writing a small function for emulating data sources with unpredictable latency. In
 ClojureScript:
 
-[source, clojure]
+[source, clojurescript]
 ----
 (require '[promesa.core :as prom])
 
@@ -133,10 +137,10 @@ and in Clojure:
 
 === Remote data sources
 
-Now, we define our data sources as record that implement Urania's `DataSource` protocol. This protocol
+Now, we define our data sources as types that implement Urania's `DataSource` protocol. This protocol
 has two functions:
 
- - `-identity`, which returns an identifier for the resource used for caching.
+ - `-identity`, which returns an identifier for the resource (used for caching and deduplication).
  - `-fetch`, which fetches the result from the remote data source returning a promise.
 
 [source, clojure]
@@ -186,6 +190,9 @@ Or use Urania's ~run!!~ function. Note that we can only block in Clojure, not in
 ;; => #{0 7 1 4 6 3 2 9 5 8}
 ----
 
+For convenience, the rest of the documentation will be using `run!!` although is not available in
+ClojureScript.
+
 ==== Transforming fetched data
 
 We can use `urania.core/fmap` function for transforming results of a data source.
@@ -197,6 +204,17 @@ We can use `urania.core/fmap` function for transforming results of a data source
 ;; -->[ 10 ] waiting 463.370748219846
 ;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
 ;; => 10
+----
+
+And compose multiple transformations together:
+
+[source, clojure]
+----
+(u/run!!
+  (u/fmap dec (u/fmap count (friends-of 10))))
+;; -->[ 10 ] waiting 463.370748219846
+;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
+;; => 9
 ----
 
 ==== Dependencies between results
@@ -449,6 +467,8 @@ exception:
 == Development
 
 === Contributing
+
+Just open an issue or pull request.
 
 == Acknowledgements
 
