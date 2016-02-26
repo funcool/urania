@@ -125,7 +125,18 @@
                                          (u/cache-id t20) 20}}]
        (is (= 40
               (u/run!! (u/map + t10 t10 t20) {:cache cache})))
-       (is (= 0 @t)))))
+       (is (= 0 @t))))
+   :cljs
+   (deftest prepopulated-cache
+     (let [t (atom 0)
+           t10 (Trackable. t 10)
+           t20 (Trackable. t 20)
+           cache {(u/resource-name t10) {(u/cache-id t10) 10
+                                         (u/cache-id t20) 20}}]
+       (assert-ast 40
+                   (u/map + t10 t10 t20)
+                   (fn [] (is (= 0 @t)))
+                   {:cache cache}))))
 
 #?(:clj
    (deftest caching
