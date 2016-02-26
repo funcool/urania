@@ -9,17 +9,22 @@
 (declare value)
 
 (defprotocol Executor
-  "A protocol for a policy for executing tasks."
+  "A policy for executing tasks."
   (-submit [ex task] "Perform a task."))
 
 (defprotocol DataSource
-  "Defines a remote data source."
-  (-identity [this])
-  (-fetch [this]))
+  "A remote data source."
+  (-identity [this]
+    "Return an identifier for this data source.
+    Used for caching, note that data Sources of different types are cached separately.")
+  (-fetch [this]
+    "Fetch this data source "))
 
 (defprotocol BatchedSource
-  "Defines a remote data source that can be fetched in batches."
-  (-fetch-multi [this resources]))
+  "A remote data source that can be fetched in batches."
+  (-fetch-multi [this resources]
+    "Fetch this and other data sources in a single batch.
+    The returned promise must be a map from the data source identities to their results."))
 
 (defprotocol AST
   (-children [this])
