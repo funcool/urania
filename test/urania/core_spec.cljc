@@ -11,22 +11,22 @@
 (deftype DList [size]
   u/DataSource
   (-identity [_] size)
-  (-fetch [_] (prom/resolved (range size))))
+  (-fetch [_ _] (prom/resolved (range size))))
 
 (deftype DListFail [size]
   u/DataSource
   (-identity [_] size)
-  (-fetch [_] (prom/rejected (ex-info "Invalid size" {:size size}))))
+  (-fetch [_ _] (prom/rejected (ex-info "Invalid size" {:size size}))))
 
 (deftype Single [seed]
   u/DataSource
   (-identity [_] seed)
-  (-fetch [_] (prom/resolved seed)))
+  (-fetch [_ _] (prom/resolved seed)))
 
 (deftype Pair [seed]
   u/DataSource
   (-identity [_] seed)
-  (-fetch [_] (prom/resolved [seed seed])))
+  (-fetch [_ _] (prom/resolved [seed seed])))
 
 (defn- mk-pair [seed] (Pair. seed))
 
@@ -110,7 +110,7 @@
 (deftype Trackable [tracker seed]
   u/DataSource
   (-identity [_] seed)
-  (-fetch [_]
+  (-fetch [_ _]
     (swap! tracker inc)
     (prom/resolved seed)))
 
@@ -178,12 +178,12 @@
 (defrecord BatchedTrackable [tracker seed]
   u/DataSource
   (-identity [_] seed)
-  (-fetch [_]
+  (-fetch [_ _]
     (swap! tracker inc)
     (prom/resolved seed))
 
   u/BatchedSource
-  (-fetch-multi [_ trackables]
+  (-fetch-multi [_ trackables _]
     (let [seeds (cons seed (map :seed trackables))]
       (swap! tracker inc)
       (prom/resolved (zipmap seeds seeds)))))
@@ -256,3 +256,39 @@
                  (u/fmap + (Single. 21) (Single. 21))
                  identity
                  {:executor sync-executor})))
+
+;; environment
+
+(defrecord Environment [id]
+  u/DataSource
+  (-identity [_] id)
+  (-fetch [_ env] (prom/resolved env))
+
+  u/BatchedSource
+  (-fetch-multi [_ envs env]
+    (let [ids (cons id (map :id envs))]
+      (prom/resolved (zipmap ids (map vector ids (repeat env)))))))
+
+#?(:clj
+   (deftest env-is-passed-to-fetch
+     (is (= :the-environment
+            (u/run!! (Environment. 42)
+                     {:env :the-environment}))))
+   :cljs
+   (deftest env-is-passed-to-fetch
+     (assert-ast :the-environment
+                 (Environment. 42)
+                 identity
+                 {:env :the-environment})))
+
+#?(:clj
+   (deftest env-is-passed-to-fetch-multi
+     (is (= [[42 :the-environment] [99 :the-environment]]
+            (u/run!! (u/collect [(Environment. 42) (Environment. 99)])
+                     {:env :the-environment}))))
+   :cljs
+   (deftest env-is-passed-to-fetch-multi
+     (assert-ast [[42 :the-environment] [99 :the-environment]]
+                 (u/collect [(Environment. 42) (Environment. 99)])
+                 identity
+                 {:env :the-environment})))

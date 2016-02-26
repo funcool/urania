@@ -15,12 +15,12 @@
   (-identity [this]
     "Return an identifier for this data source.
     Used for caching, note that data Sources of different types are cached separately.")
-  (-fetch [this]
+  (-fetch [this env]
     "Fetch this data source "))
 
 (defprotocol BatchedSource
   "A remote data source that can be fetched in batches."
-  (-fetch-multi [this resources]
+  (-fetch-multi [this resources env]
     "Fetch this and other data sources in a single batch.
     The returned promise must be a map from the data source identities to their results."))
 
@@ -159,36 +159,36 @@
 ;; Fetching
 
 (defn- run-fetch
-  [executor muse]
+  [{:keys [executor env]} muse]
   (prom/promise
    (fn [resolve reject]
-     (-execute executor #(prom/branch (-fetch muse) resolve reject)))))
+     (-execute executor #(prom/branch (-fetch muse env) resolve reject)))))
 
 (defn- run-fetch-multi
-  [executor muse muses]
+  [{:keys [executor env]} muse muses]
   (prom/promise
    (fn [resolve reject]
-     (-execute executor #(prom/branch (-fetch-multi muse muses) resolve reject)))))
+     (-execute executor #(prom/branch (-fetch-multi muse muses env) resolve reject)))))
 
 (defn- fetch-many-caching
-  [executor sources]
+  [opts sources]
   (let [ids (map cache-id sources)
-        responses (map (partial run-fetch executor) sources)]
+        responses (map (partial run-fetch opts) sources)]
     (prom/then (prom/all responses) #(zipmap ids %))))
 
 (defn- fetch-one-caching
-  [executor source]
-  (prom/then (run-fetch executor source)
+  [opts source]
+  (prom/then (run-fetch opts source)
              (fn [res]
                {(cache-id source) res})))
 
 (defn- fetch-sources
-  [executor [head & tail :as sources]]
+  [opts [head & tail :as sources]]
   (if-not (seq tail)
-    (fetch-one-caching executor head)
+    (fetch-one-caching opts head)
     (if (satisfies? BatchedSource head)
-      (run-fetch-multi executor head tail)
-      (fetch-many-caching executor sources))))
+      (run-fetch-multi opts head tail)
+      (fetch-many-caching opts sources))))
 
 (defn- dedupe-sources
   [sources]
@@ -198,8 +198,8 @@
        (map first)))
 
 (defn- fetch-resource
-  [executor [resource-name sources]]
-  (prom/then (fetch-sources executor (dedupe-sources sources))
+  [opts [resource-name sources]]
+  (prom/then (fetch-sources opts (dedupe-sources sources))
              (fn [resp]
                [resource-name resp])))
 
@@ -213,7 +213,7 @@
       (mapcat next-level values))))
 
 (defn- interpret-ast
-  [ast-node {:keys [cache executor] :as opts} success! error!]
+  [ast-node {:keys [cache] :as opts} success! error!]
   (let [ast-node (inject-into opts ast-node)
         requests (next-level ast-node)]
     (if-not (seq requests)
@@ -221,7 +221,7 @@
         (success! [(:value ast-node) cache])
         (recur ast-node opts success! error!))
       (let [requests-by-type (group-by resource-name requests)
-            responses (map (partial fetch-resource executor) requests-by-type)]
+            responses (map (partial fetch-resource opts) requests-by-type)]
         (prom/branch (prom/all responses)
                      (fn [results]
                        (let [next-cache (into cache results)
@@ -262,7 +262,10 @@
   - `:executor`: An implementation of `IExecutor` that will be used
    to run the fetches. Defaults to `urania.core/default-executor`.
 
-   In Clojure you can pass a `java.util.concurrent.Executor` instance."
+   In Clojure you can pass a `java.util.concurrent.Executor` instance.
+
+  - `:env`: An environment that will be passed to every data fetching
+  function."
   ([ast]
    (execute! ast run-defaults))
   ([ast opts]
@@ -284,7 +287,10 @@
   - `:executor`: An implementation of `IExecutor` that will be used
    to run the fetches. Defaults to `urania.core/default-executor`.
 
-   In Clojure you can pass a `java.util.concurrent.Executor` instance."
+   In Clojure you can pass a `java.util.concurrent.Executor` instance.
+
+  - `:env`: An environment that will be passed to every data fetching
+  function."
   ([ast]
    (run! ast run-defaults))
   ([ast opts]
