@@ -229,7 +229,13 @@
 
 ;; Public API
 
-(def default-executor
+(def sync-executor
+  (reify
+    Executor
+    (-submit [_ task]
+      (task))))
+
+(def async-executor
   #?(:clj
      (reify Executor
        (-submit [_ task]
@@ -237,10 +243,10 @@
      :cljs
      (reify Executor
        (-submit [_ task]
-         (task)))))
+         (.setTimeout 0 task)))))
 
 (def run-defaults {:cache {}
-                   :executor default-executor})
+                   :executor async-executor})
 
 (defn run!
   "Asynchronously executes the body, returning immediately to the
