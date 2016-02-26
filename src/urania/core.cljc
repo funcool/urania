@@ -4,10 +4,6 @@
   #?(:clj (:import java.util.concurrent.ForkJoinPool))
   (:refer-clojure :exclude (run!)))
 
-(declare fmap)
-(declare flat-map)
-(declare value)
-
 (defprotocol Executor
   "A policy for executing tasks."
   (-submit [ex task] "Perform a task."))
@@ -26,6 +22,10 @@
     "Fetch this and other data sources in a single batch.
     The returned promise must be a map from the data source identities to their results."))
 
+;; AST
+
+(declare inject-into)
+
 (defprotocol AST
   (-children [this])
   (-inject [this env])
@@ -43,26 +43,6 @@
   (-done? [_] true)
   (-inject [this _] this))
 
-(defn resource-name [v]
-  (pr-str (type v)))
-
-(defn cache-id
-  [res]
-  (-identity res))
-
-(def cache-path (juxt resource-name cache-id))
-
-(defn- cached-or [env res]
-  (let [cache (get env :cache)
-        cached (get-in cache (cache-path res) ::not-found)]
-    (if (= ::not-found cached)
-      res
-      (Done. cached))))
-
-(defn- inject-into [env node]
-  (if (satisfies? DataSource node)
-    (cached-or env node)
-    (-inject node env)))
 
 (deftype Map [f values]
   ComposedAST
@@ -110,6 +90,27 @@
       (if (-done? next)
         (Done. (:value next))
         next))))
+
+(defn resource-name [v]
+  (pr-str (type v)))
+
+(defn cache-id
+  [res]
+  (-identity res))
+
+(def cache-path (juxt resource-name cache-id))
+
+(defn- cached-or [env res]
+  (let [cache (get env :cache)
+        cached (get-in cache (cache-path res) ::not-found)]
+    (if (= ::not-found cached)
+      (Map. identity [res])
+      (Done. cached))))
+
+(defn- inject-into [env node]
+  (if (satisfies? DataSource node)
+    (cached-or env node)
+    (-inject node env)))
 
 ;; Combinators
 
@@ -211,20 +212,19 @@
 
 (defn- interpret-ast
   [ast-node {:keys [cache executor] :as opts} success! error!]
-  (let [requests (next-level ast-node)]
+  (let [ast-node (inject-into opts ast-node)
+        requests (next-level ast-node)]
     (if-not (seq requests)
       (if (-done? ast-node)
         (success! (:value ast-node))
-        (let [next-ast (inject-into {:cache cache} ast-node)]
-          (recur next-ast opts success! error!)))
+        (recur ast-node opts success! error!))
       (let [requests-by-type (group-by resource-name requests)
             responses (map (partial fetch-resource executor) requests-by-type)]
         (prom/branch (prom/all responses)
                      (fn [results]
                        (let [next-cache (into cache results)
-                             next-ast (inject-into {:cache next-cache} ast-node)
                              next-opts (assoc opts :cache next-cache)]
-                         (interpret-ast next-ast next-opts success! error!)))
+                         (interpret-ast ast-node next-opts success! error!)))
                      error!)))))
 
 ;; Public API
