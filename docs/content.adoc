@@ -336,7 +336,53 @@ the number of results of the first query, and we've been able to reduce it to 2!
 While providing a convenient high-level API, `urania` allows you to customize how your fetches are run.
 
 === Caching
+
+`urania` stores intermediate results in a cache, grouping data sources by their name and mapping their
+identity to the fetched value. You can run a fetch and get back both the final cache and the results using
+`urania.core/evaluate!` instead of `urania.core/run!`.
+
+Let's define a simple data source and fetch some results with `urania.core/evaluate!` to see the cached
+values:
+
+[source, clojure]
+----
+(deftype Simple [id result]
+  u/DataSource
+  (-identity [_] id)
+  (-fetch [_ _] (prom/resolved result)))
+
+(deref
+  (u/evaluate! (Simple. 1 42)))
+;; => [42 {"user.Simple" {1 42}}]
+----
+
+You can see how the resulting promise will have a two-element vector, the first being the result and the second
+the cache.
+
+We now can run the same fetch without even having to call `-fetch` again, just by passing a prepopulated cache.
+We pass it under the `:cache` keyword to the `urania.core/run!` method's options:
+
+[source, clojure]
+----
+(u/run! (Simple. 1 42) {:cache {"user.Simple" {1 42}}})
+----
+
+Note that both `urania.core/run!!` and `urania.core/execute!` support receiving an options map with the cache.
+
+If you want to programmaticaly populate a cache, you can do so easily:
+
+[source, clojure]
+----
+(def simple1 (Simple. 1 42))
+(def simple2 (Simple. 2 99))
+
+{(u/resource-name simple1) {(u/cache-id simple1) 42
+                            (u/cache-id simple2) 99}}
+;; => {"user.Simple" {1 42, 2 99}}
+----
+
 === Executor
+
 === Environment
 
 == More resources
