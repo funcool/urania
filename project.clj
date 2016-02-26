@@ -5,7 +5,8 @@
             :url "http://opensource.org/licenses/MIT"
             :distribution :repo}
   :global-vars {*warn-on-reflection* false}
-  :dependencies []
+  :dependencies [[funcool/promesa "0.8.1" :scope "provided"]]
+
   :test-paths ["test"]
 
   :cljsbuild {:test-commands {"test" ["node" "output/tests.js"]}
