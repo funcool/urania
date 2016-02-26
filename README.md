@@ -11,5 +11,5 @@ Oh Calíope, augusta entre las musas, haz florecer el jardín. Trae la rima.
 
 Elegant and Efficient remote data access for Clojure(Script).
 
-- **Documentation:** http://funcool.github.io/cats/latest/
+- **Documentation:** http://funcool.github.io/urania/latest/
 
