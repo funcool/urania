@@ -8,22 +8,22 @@
                [promesa.core :as prom]
                [urania.core :as u :refer (fmap flat-map)])))
 
-(defrecord DList [size]
+(deftype DList [size]
   u/DataSource
   (-identity [_] size)
   (-fetch [_] (prom/resolved (range size))))
 
-(defrecord DListFail [size]
+(deftype DListFail [size]
   u/DataSource
   (-identity [_] size)
   (-fetch [_] (prom/rejected (ex-info "Invalid size" {:size size}))))
 
-(defrecord Single [seed]
+(deftype Single [seed]
   u/DataSource
   (-identity [_] seed)
   (-fetch [_] (prom/resolved seed)))
 
-(defrecord Pair [seed]
+(deftype Pair [seed]
   u/DataSource
   (-identity [_] seed)
   (-fetch [_] (prom/resolved [seed seed])))
@@ -104,7 +104,7 @@
   (assert-failed? #(u/value (fmap inc (u/value 0)))))
 
 ;; attention! never do such mutations within "fetch" in real code
-(defrecord Trackable [tracker seed]
+(deftype Trackable [tracker seed]
   u/DataSource
   (-identity [_] seed)
   (-fetch [_]
