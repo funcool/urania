@@ -12,8 +12,8 @@ Funcool
 == Introduction
 
 Oftentimes, your business logic relies on remote data that you need
-to fetch from different sources: databases, caches, web services or
-3rd party APIs, and you can't mess things up. Urania helps you to keep
+to fetch from different sources: databases, caches, web services, or
+third party APIs, and you can't mess things up. Urania helps you to keep
 your business logic clear of low-level details while performing efficiently:
 
 - batch multiple requests to the same data source
@@ -36,10 +36,10 @@ it as a dependency in your *_project.clj_*:
 
 === Limitations
 
-- requires Java 8 when used from Clojure due to its use of java.util.concurrent.CompletableFuture
-- works with the promesa library only (if you use other async mechanism like futures you can easily turn your code to be compatible with promises)
-- assumes your operations with data sources are "side-effects free", so you don't really care about the order of fetches
-- you need enough memory to store the whole data fetched during a single run! call (in case it's impossible you should probably look into other ways to solve your problem, i.e. data stream libraries)
+- requires Java 8 when used from Clojure due to its use of `java.util.concurrent.CompletableFuture`
+- works with the link:https://github.com/funcool/promesa[Promesa] library only (if you use other async mechanism like futures you can easily turn your code to be compatible with promises)
+- assumes your operations with data sources are "side-effect free", so you don't really care about the order of fetches
+- you need enough memory to store the whole data fetched during a single `run!` call (in case it's impossible you should probably look into other ways to solve your problem, i.e. data stream libraries)
 
 == User Guide
 
@@ -63,11 +63,11 @@ we fetch the user data from a remote data source.
   (count-common (friends-of x)
 		(friends-of y)))
 
-(num-common-friends 1 2)
+(count-common-friends 1 2)
 ----
 
-Here, `(friends-of x)` and `(friends-of y)` are independent, and you want it to be fetched concurrently in a
-single batch. Furthermore, if `x` and `y` refer to the same person, you don't want to redundantly re-fetch
+Here, `(friends-of x)` and `(friends-of y)` are independent, and you want them to be fetched concurrently
+or in a single request. Furthermore, if `x` and `y` refer to the same person, you don't want to redundantly re-fetch
 their friend list. What would the code look like if we applied the mentioned optimizations? We'd have to mix
 different concerns like caching and batching together with the business logic we perform with the data.
 
@@ -77,20 +77,20 @@ different concerns like caching and batching together with the business logic we
 ----
 (require '[urania.core :as u])
 
-(defn num-common-friends [x y]
+(defn count-common-friends [x y]
   (u/fmap count-common
-           (friends-of x)
-           (friends-of y)))
+          (friends-of x)
+          (friends-of y)))
 
-(u/run! (num-common-friends 1 2))
+(u/run! (count-common-friends 1 2))
 ----
 
-As you may have noticed, Urania does so separating the data fetch declaration from its execution. It helps
-you keep your business logic free of low-level details while:
+As you may have noticed, Urania does so separating the data fetch declaration from its execution. When running
+your fetches, `urania` will:
 
-- requesting data from multiple data sources concurrently
-- batching multiple requests to the same data source
-- caching repeated requests
+- reques data from multiple data sources concurrently
+- batch multiple requests to the same data source
+- cache repeated requests
 
 === Fetching data
 
@@ -108,8 +108,8 @@ ClojureScript:
   (prom/promise
     (fn [resolve reject]
       (let [wait (rand 1000)]
-       (println "-->" id ".." wait)
-       (js/setTimeout #(do (println "<--" id)
+       (println (str "-->[ " id " ] waiting " wait))
+       (js/setTimeout #(do (println (str "<--[ " id " ] finished, result: " result))
                            (resolve result))
                       wait)))))
 ----
@@ -124,17 +124,20 @@ and in Clojure:
   (prom/promise
     (fn [resolve reject]
       (let [wait (rand 1000)]
-       (println "-->" id ".." wait)
-       (Thread/sleep wait)
-       (println "<--" id)
-       (resolve result)))))
+        (println (str "-->[ " id " ] waiting " wait))
+        (Thread/sleep wait)
+        (println (str "<--[ " id " ] finished, result: " result))
+        (resolve result)))))
 ----
 
 
-=== Data sources
+=== Remote data sources
 
 Now, we define our data sources as record that implement Urania's `DataSource` protocol. This protocol
-has a single function, `fetch`, that must return a promise.
+has two functions:
+
+ - `-identity`, which returns an identifier for the resource used for caching.
+ - `-fetch`, which fetches the result from the remote data source returning a promise.
 
 [source, clojure]
 ----
@@ -142,7 +145,8 @@ has a single function, `fetch`, that must return a promise.
 
 (defrecord FriendsOf [id]
   u/DataSource
-  (fetch [_]
+  (-identity [_] id)
+  (-fetch [_ _]
     (remote-req id (set (range id)))))
 
 (defn friends-of [id]
@@ -157,8 +161,8 @@ We'll use ~urania.core/run!~ for running a fetch, it returns a promise.
 ----
 (u/run! (friends-of 10))
 ;; -->[ 10 ] waiting 510.17118249719886
+;; => #<Promise [~]>
 ;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
-;; #<Promise [~]>
 ----
 
 We can block for the promise's result with ~deref~:
@@ -169,7 +173,7 @@ We can block for the promise's result with ~deref~:
   (u/run! (friends-of 10)))
 ;; -->[ 10 ] waiting 265.2789087406875
 ;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
-;; #{0 7 1 4 6 3 2 9 5 8}
+;; => #{0 7 1 4 6 3 2 9 5 8}
 ----
 
 Or use Urania's ~run!!~ function. Note that we can only block in Clojure, not in ClojureScript.
@@ -179,7 +183,7 @@ Or use Urania's ~run!!~ function. Note that we can only block in Clojure, not in
 (u/run!! (friends-of 10))
 ;; -->[ 10 ] waiting 265.2789087406875
 ;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
-;; #{0 7 1 4 6 3 2 9 5 8}
+;; => #{0 7 1 4 6 3 2 9 5 8}
 ----
 
 ==== Transforming fetched data
@@ -192,19 +196,148 @@ We can use `urania.core/fmap` function for transforming results of a data source
   (u/fmap count (friends-of 10)))
 ;; -->[ 10 ] waiting 463.370748219846
 ;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
-;; 10
 ;; => 10
 ----
 
-==== LabeledSource
-==== BatchedSource
+==== Dependencies between results
 
-== Examples
+Let's imagine we have another information we want to fetch: a user's activity score. For fetching
+a user's activity score we'll need to fetch the user first, and `urania` provides a combinator
+for doing so: `urania.core/flat-map`.
 
-=== The N+1 selects problem
+First of all, let's define our activity score data source:
+
+[source, clojure]
+----
+(defrecord ActivityScore [id]
+  u/DataSource
+  (-identity [_] id)
+  (-fetch [_ _]
+    (remote-req id (inc id))))
+
+(defn activity
+  [id]
+  (ActivityScore. id))
+----
+
+Now we want to fetch the activity scores of the first friend of a certain user. We need to know intermediate
+results of a fetch to continue, so we use `urania.core/flat-map`:
+
+[source, clojure]
+----
+(defn first-friends-activity
+  [id]
+  (u/flat-map (fn [friends]
+                (activity (first friends)))
+              (friends-of id)))
+----
+
+We can now run this fetch:
+
+[source, clojure]
+----
+(u/run!! (first-friends-activity 10))
+;; -->[ 10 ] waiting 575.5289747556875
+;; <--[ 10 ] finished, result: #{0 7 1 4 6 3 2 9 5 8}
+;; -->[ 0 ] waiting 63.24540090623976
+;; <--[ 0 ] finished, result: 1
+;; => 1
+----
+
+But, what if we wanted the activity score for every friend of a user? `urania` provides a combinator for
+transforming a list of data sources into a data source that returns a list of results: `urania.core/collect`.
+
+Let's use it to collect the activity score for every user:
+
+[source, clojure]
+----
+(defn friends-activity
+  [id]
+  (u/flat-map (fn [friends]
+                  (u/collect (map activity friends)))
+                (friends-of id)))
+----
+
+If we run it:
+
+[source, clojure]
+----
+(u/run!! (friends-activity 5))
+;; -->[ 5 ] waiting 480.8846764476696
+;; <--[ 5 ] finished, result: #{0 1 4 3 2}
+;; -->[ 0 ] waiting 488.58045819535687
+;; -->[ 1 ] waiting 87.96784013662884
+;; -->[ 4 ] waiting 868.2747930486679
+;; <--[ 1 ] finished, result: 2
+;; -->[ 3 ] waiting 293.59429652774116
+;; <--[ 3 ] finished, result: 4
+;; -->[ 2 ] waiting 280.68098217346835
+;; <--[ 0 ] finished, result: 1
+;; <--[ 2 ] finished, result: 3
+;; <--[ 4 ] finished, result: 5
+;; => [1 2 5 4 3]
+----
+
+As you may have noticed, the data sources passed to `urania.core/collect` are fetched concurrently. Furthermore,
+it will detect and eliminate duplicate requests:
+
+[source, clojure]
+----
+(u/run!! (u/collect [(friends-of 1) (friends-of 2) (friends-of 2)]))
+;; -->[ 2 ] waiting 634.8383950264134
+;; -->[ 1 ] waiting 924.8381446535985
+;; <--[ 2 ] finished, result: #{0 1}
+;; <--[ 1 ] finished, result: #{0}
+;; => [#{0} #{0 1} #{0 1}]
+----
+
+See how the friends of the user with id `2` are only fetched once, even when is duplicated in the collection passed to
+`urania.core/collect`.
+
+==== Batching requests
+
+We've seen that `urania` organizes and deduplicates fetches for us but there is still room for improvement. In our
+examples using `urania.core/collect`, we've seen how requests to the same data source are run concurrently.
 
 
-=== HTTP calls
+In many cases, remote data sources will offer a batch API that we can use to reduce latency when fetching multiple
+results. If our data sources can be fetched in batches, `urania` can detect it and optimize our fetches further.
+
+Let's add batch fetching to the `ActivityScore`, we just need to implement the `BatchedSource` protocol. It
+has only one method: `-fetch-multi`, which receives the data sources to fetch and must return a promise with a
+map from the data source identities to their results.
+
+[source, clojure]
+----
+(extend-type ActivityScore
+  u/BatchedSource
+  (-fetch-multi [score scores _]
+    (let [ids (cons (:id score) (map :id scores))]
+      (remote-req ids (zipmap ids (map inc ids))))))
+----
+
+Let's try to run our `friends-activity` again:
+
+[source, clojure]
+----
+(u/run!! (friends-activity 5))
+;; -->[ 5 ] waiting 123.11807342157954
+;; <--[ 5 ] finished, result: #{0 1 4 3 2}
+;; -->[ (0 1 4 3 2) ] waiting 97.95578032830765
+;; <--[ (0 1 4 3 2) ] finished, result: {0 1, 1 2, 4 5, 3 4, 2 3}
+;; [1 2 5 4 3]
+----
+
+Our previous fetch of `(friends-activity 5)` did `n + 1` requests to fetch remote data, where `n` is
+the number of results of the first query, and we've been able to reduce it to 2!
+
+== Advanced usage
+
+While providing a convenient high-level API, `urania` allows you to customize how your fetches are run.
+
+=== Caching
+=== Executor
+=== Environment
 
 == More resources
 
