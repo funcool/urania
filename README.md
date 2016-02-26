@@ -9,5 +9,7 @@ Oh Calíope, augusta entre las musas, haz florecer el jardín. Trae la rima.
 -- <cite>Kase O, Mierda</cite>
 </blockquote>
 
+Elegant and Efficient remote data access for Clojure(Script).
 
-Documentation coming soon.
+- **Documentation:** http://funcool.github.io/cats/latest/
+
