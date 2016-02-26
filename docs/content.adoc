@@ -383,7 +383,62 @@ If you want to programmaticaly populate a cache, you can do so easily:
 
 === Executor
 
+`urania` will run your fetch functions asynchronously by default. In Clojure it'll use `java.util.concurrent.ForkJoinPool/commonPool` whereas
+in ClojureScript will use the global `setTimeout` function.
+
+However, you can customize how the fetch functions are run providing a custom executor as an option. In Clojure, you can pass any object that implements `java.util.concurrent.Executor`
+and it will just work. If you want more fine-grained control you must pass a type implementing the `IExecutor` protocol.
+
+Let's implement a dummy synchronous executor as an example and use it:
+
+[source, clojure]
+----
+(def sync-executor
+  (reify u/IExecutor
+    (-execute [_ task]
+      (task))))
+
+(u/run!! (Simple. 1 42) {:executor sync-executor})
+;; => 42
+----
+
 === Environment
+
+The data fetching is commonly performed using stateful objects like a database connection, HTTP client and so on. You
+may have noticed that both `-fetch` and `-fetch-multi` take a last argument that we haven't used so far: the environment.
+
+The environment is a way for passing arguments to the fetch and fetch-multi functions, let's see it in action:
+
+[source, clojure]
+----
+(defrecord Environment [id]
+  u/DataSource
+  (-identity [_] id)
+  (-fetch [_ env] (prom/resolved env)))
+
+(u/run!! (Environment. 1) {:env {:connection :a-connection}})
+;; => {:connection :a-connection}
+----
+
+As you can see, the `:env` value that we pass in the options is available for single fetches. Batched fetches are no
+exception:
+
+[source, clojure]
+----
+(defrecord Environment [id]
+  u/DataSource
+  (-identity [_] id)
+  (-fetch [_ env] (prom/resolved env))
+  
+  u/BatchedSource
+  (-fetch-multi [_ envs env]
+    (let [ids (cons id (map :id envs))]
+      (prom/resolved (zipmap ids (map vector ids (repeat env)))))))
+
+(u/run!! (u/collect [(Environment. 1) (Environment. 2)])
+         {:env {:connection :a-connection}})
+;; => [[1 {:connection :a-connection}] [2 {:connection :a-connection}]]
+----
 
 == More resources
 
@@ -397,7 +452,7 @@ If you want to programmaticaly populate a cache, you can do so easily:
 
 == Acknowledgements
 
-Urania is based on the initial work on Muse by Alexey Kachayev. It is also heavily inspired by:
+`urania` is based on the initial work on Muse by Alexey Kachayev. It is also heavily inspired by:
 
 - Haxl (https://github.com/facebook/Haxl) - Haskell library, Facebook, open-sourced
 - Stitch (https://www.youtube.com/watch?v=VVpmMfT8aYw) - Scala library, Twitter, not open-sourced
