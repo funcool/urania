@@ -10,27 +10,23 @@
 
 (defrecord DList [size]
   u/DataSource
-  (-fetch [_] (prom/resolved (range size)))
-  u/LabeledSource
-  (-resource-id [_] size))
+  (-identity [_] size)
+  (-fetch [_] (prom/resolved (range size))))
 
 (defrecord DListFail [size]
   u/DataSource
-  (-fetch [_] (prom/rejected (ex-info "Invalid size" {:size size})))
-  u/LabeledSource
-  (-resource-id [_] size))
+  (-identity [_] size)
+  (-fetch [_] (prom/rejected (ex-info "Invalid size" {:size size}))))
 
 (defrecord Single [seed]
   u/DataSource
-  (-fetch [_] (prom/resolved seed))
-  u/LabeledSource
-  (-resource-id [_] seed))
+  (-identity [_] seed)
+  (-fetch [_] (prom/resolved seed)))
 
 (defrecord Pair [seed]
   u/DataSource
-  (-fetch [_] (prom/resolved [seed seed]))
-  u/LabeledSource
-  (-resource-id [_] seed))
+  (-identity [_] seed)
+  (-fetch [_] (prom/resolved [seed seed])))
 
 (defn- mk-pair [seed] (Pair. seed))
 
@@ -110,17 +106,10 @@
 ;; attention! never do such mutations within "fetch" in real code
 (defrecord Trackable [tracker seed]
   u/DataSource
+  (-identity [_] seed)
   (-fetch [_]
     (swap! tracker inc)
-    (prom/resolved seed))
-  u/LabeledSource
-  (-resource-id [_] seed))
-
-(defrecord TrackableId [tracker id]
-  u/DataSource
-  (-fetch [_]
-    (swap! tracker inc)
-    (prom/resolved id)))
+    (prom/resolved seed)))
 
 ;; caching
 
@@ -135,9 +124,8 @@
               (u/run!! (fmap + t10 t10 t20) {:cache cache})))
        (is (= 0 @t)))))
 
-;; w explicit source labeling
 #?(:clj
-   (deftest caching-explicit-labels
+   (deftest caching
      (let [t (atom 0)]
        (assert-ast 40
                    (fmap + (Trackable. t 10) (Trackable. t 10) (Trackable. t 20)))
@@ -148,7 +136,7 @@
        (is (= 2 @t1))))
 
    :cljs
-   (deftest caching-explicit-labels
+   (deftest caching
      (let [t (atom 0)]
        (assert-ast 40
                    (fmap + (Trackable. t 10) (Trackable. t 10) (Trackable. t 20))
@@ -158,22 +146,8 @@
                    (fmap + (Trackable. t1 100) (Trackable. t1 100) (Trackable. t1 200))
                    (fn [] (is (= 2 @t1)))))))
 
-;; w/o explicit source labeling
 #?(:clj
-   (deftest caching-implicit-labels
-     (let [t2 (atom 0)]
-       (assert-ast 100 (fmap * (TrackableId. t2 10) (TrackableId. t2 10)))
-       (is (= 1 @t2))))
-   :cljs
-   (deftest caching-implicit-labels
-     (let [t2 (atom 0)]
-       (assert-ast 100
-                   (fmap * (TrackableId. t2 10) (TrackableId. t2 10))
-                   (fn [] (is (= 1 @t2)))))))
-
-;; different tree branches/levels
-#?(:clj
-   (deftest caching-multiple-trees
+   (deftest caching-multiple-levels
      (let [t3 (atom 0)]
        (assert-ast 140 (fmap +
                              (Trackable. t3 50)
@@ -188,7 +162,7 @@
        (is (= 2 @t4)))))
 
 #?(:cljs
-   (deftest caching-multiple-trees
+   (deftest caching-multiple-levels
      (let [t3 (atom 0)]
        (assert-ast 140 (fmap +
                              (Trackable. t3 50)
@@ -200,11 +174,10 @@
 
 (defrecord BatchedTrackable [tracker seed]
   u/DataSource
+  (-identity [_] seed)
   (-fetch [_]
     (swap! tracker inc)
     (prom/resolved seed))
-  u/LabeledSource
-  (-resource-id [_] seed)
 
   u/BatchedSource
   (-fetch-multi [_ trackables]
@@ -213,7 +186,7 @@
       (prom/resolved (zipmap seeds seeds)))))
 
 #?(:clj
-   (deftest batching-explicit-labels
+   (deftest batching
      (let [t (atom 0)]
        (assert-ast 40
                    (fmap + (BatchedTrackable. t 10) (BatchedTrackable. t 10) (BatchedTrackable. t 20)))
@@ -224,7 +197,7 @@
        (is (= 1 @t1))))
 
    :cljs
-   (deftest batching-explicit-labels
+   (deftest batching
      (let [t (atom 0)]
        (assert-ast 40
                    (fmap + (BatchedTrackable. t 10) (BatchedTrackable. t 10) (BatchedTrackable. t 20))
@@ -234,34 +207,8 @@
                    (fmap + (BatchedTrackable. t1 100) (BatchedTrackable. t1 100) (BatchedTrackable. t1 200))
                    (fn [] (is (= 1 @t1)))))))
 
-(defrecord BatchedTrackableId [tracker id]
-  u/DataSource
-  (-fetch [_]
-    (swap! tracker inc)
-    (prom/resolved id))
-
-  u/BatchedSource
-  (-fetch-multi [_ trackables]
-    (let [ids (cons id (map :id trackables))]
-      (swap! tracker inc)
-      (prom/resolved (zipmap ids ids)))))
-
 #?(:clj
-   (deftest batching-implicit-labels
-     (let [t2 (atom 0)]
-       (assert-ast 100 (fmap * (BatchedTrackableId. t2 10) (BatchedTrackableId. t2 10)))
-       (is (= 1 @t2))))
-   :cljs
-   (deftest batching-implicit-labels
-     (let [t2 (atom 0)]
-       (assert-ast 100
-                   (fmap * (TrackableId. t2 10) (TrackableId. t2 10))
-                   (fn [] (is (= 1 @t2)))))))
-
-;; multiple trees
-
-#?(:clj
-   (deftest batching-multiple-trees
+   (deftest batching-multiple-levels
      (let [t3 (atom 0)]
        (assert-ast 140 (fmap +
                              (BatchedTrackable. t3 50)
@@ -276,26 +223,10 @@
        (is (= 1 @t4)))))
 
 #?(:cljs
-   (deftest batching-multiple-trees
+   (deftest batching-multiple-levels
      (let [t3 (atom 0)]
        (assert-ast 140 (fmap +
                              (BatchedTrackable. t3 50)
                              (fmap (fn [[a b]] (+ a b))
                                    (u/collect [(BatchedTrackable. t3 40) (BatchedTrackable. t3 50)])))
                    (fn [] (is (= 1 @t3)))))))
-
-;; errors
-
-(defrecord Country [iso-id]
-  u/DataSource
-  (-fetch [_] (prom/resolved {:regions [{:code 1} {:code 2} {:code 3}]})))
-
-(defrecord Region [country-iso-id url-id]
-  u/DataSource
-  (-fetch [_] (prom/resolved (inc url-id))))
-
-(deftest impossible-to-cache
-  (assert-err #"Resource is not identifiable"
-              (->> (Country. "es")
-                   (u/fmap :regions)
-                   (u/traverse #(Region. "es" (:code %))))))

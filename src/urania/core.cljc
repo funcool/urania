@@ -13,30 +13,12 @@
   (-submit [ex task] "Perform a task."))
 
 (defprotocol DataSource
-  "Defines fetch method for the concrete data source. Relies on a promise
-   as a result value for fetch call (to return immediately to the caller
-   and perform fetch operations asynchronously). If defrecord is used
-   to define data source, name of record class will be used to batch fetches
-   from the same round of execution as well as to cache previous results
-   and sent fetch requests. Use LabeledSource protocol when using reify to
-   build data source instance.
-
-   See example here: https://github.com/funcool/urania/blob/master/docs/sql.md"
+  "Defines a remote data source."
+  (-identity [this])
   (-fetch [this]))
 
-(defprotocol LabeledSource
-  "The id of DataSource instance, used in cache, tracing and stat.
-   If not specified library will use (:id data-source) as an identifier.
-   In order to redefine resource-name you should return seq of 2 elements:
-   '(name id) as a result of resource-id call"
-  (-resource-id [this]))
-
 (defprotocol BatchedSource
-  "Group few data fetches into a single request to remote source (i.e.
-   Redis MGET or SQL SELECT .. IN ..). Return promise and write to it
-   map from ID to generic fetch response (as it was made without batching).
-
-   See example here: https://github.com/funcool/urania/blob/master/docs/sql.md"
+  "Defines a remote data source that can be fetched in batches."
   (-fetch-multi [this resources]))
 
 (defprotocol AST
@@ -61,13 +43,7 @@
 
 (defn cache-id
   [res]
-  (let [id (if (satisfies? LabeledSource res)
-             (-resource-id res)
-             (:id res))]
-    (assert (not (nil? id))
-            (str "Resource is not identifiable: " res
-                 " Please, use LabeledSource protocol or record with :id key"))
-    id))
+  (-identity res))
 
 (def cache-path (juxt resource-name cache-id))
 
