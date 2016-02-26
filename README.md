@@ -1,4 +1,4 @@
-## Urania
+# Urania
 
 [![Build Status](https://travis-ci.org/funcool/urania.svg?branch=master)](https://travis-ci.org/funcool/urania)
 
