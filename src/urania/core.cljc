@@ -1,12 +1,14 @@
 (ns urania.core
   (:require [promesa.core :as prom]
             [clojure.string :as s])
-  #?(:clj (:import java.util.concurrent.ForkJoinPool))
+  #?(:clj
+     (:import java.util.concurrent.ForkJoinPool
+              java.util.concurrent.Executor))
   (:refer-clojure :exclude (run!)))
 
-(defprotocol Executor
+(defprotocol IExecutor
   "A policy for executing tasks."
-  (-submit [ex task] "Perform a task."))
+  (-execute [ex task] "Perform a task."))
 
 (defprotocol DataSource
   "A remote data source."
@@ -160,13 +162,13 @@
   [executor muse]
   (prom/promise
    (fn [resolve reject]
-     (-submit executor #(prom/branch (-fetch muse) resolve reject)))))
+     (-execute executor #(prom/branch (-fetch muse) resolve reject)))))
 
 (defn- run-fetch-multi
   [executor muse muses]
   (prom/promise
    (fn [resolve reject]
-     (-submit executor #(prom/branch (-fetch-multi muse muses) resolve reject)))))
+     (-execute executor #(prom/branch (-fetch-multi muse muses) resolve reject)))))
 
 (defn- fetch-many-caching
   [executor sources]
@@ -229,35 +231,37 @@
 
 ;; Public API
 
-(def sync-executor
-  (reify
-    Executor
-    (-submit [_ task]
-      (task))))
+#?(:clj
+   (extend Executor
+     IExecutor
+     {:-execute (fn [ex task] (.execute ex task))}))
 
-(def async-executor
+(def default-executor
   #?(:clj
-     (reify Executor
-       (-submit [_ task]
-         (.submit (ForkJoinPool/commonPool) task)))
+     (ForkJoinPool/commonPool)
      :cljs
-     (reify Executor
-       (-submit [_ task]
-         (.setTimeout 0 task)))))
+     (reify IExecutor
+       (-execute [_ task]
+         (js/setTimeout task 0)))))
 
 (def run-defaults {:cache {}
-                   :executor async-executor})
+                   :executor default-executor})
 
 (defn run!
-  "Asynchronously executes the body, returning immediately to the
-  calling thread. Rebuild body AST in order to:
+  "Executes the data fetching, returning a promise.
 
-   * fetch data sources asynchronously (when possible)
+   * fetch data sources concurrently (when possible)
    * cache result of previously made fetches
    * batch calls to the same data source (when applicable)
 
-  Returns a promise which will receive the result of
-  the body when completed."
+  You can pass a second argument with the following options:
+
+  - `:cache`: A map to use as the cache.
+
+  - `:executor`: An implementation of `IExecutor` that will be used
+   to run the fetches. Defaults to `urania.core/default-executor`.
+
+   In Clojure you can pass a `java.util.concurrent.Executor` instance."
   ([ast]
    (run! ast run-defaults))
   ([ast opts]
@@ -265,10 +269,13 @@
     (fn [resolve reject]
       (interpret-ast ast (merge run-defaults opts) resolve reject)))))
 
+#?(:clj
+   (defn run!!
+     "Dereferences the the promise returned by `run!`.
+     Will block if nothing is available.
 
-(def run!!
-  ^{:doc
-    "Dereferences the the promise returned by (run! ast).
-     Will block if nothing is available. Not available on
-     ClojureScript."}
-  (comp deref run!))
+     Not available on ClojureScript."
+     ([ast]
+      (deref (run! ast)))
+     ([ast opts]
+      (deref (run! ast opts)))))
