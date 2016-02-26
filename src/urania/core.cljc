@@ -14,7 +14,7 @@
   "A remote data source."
   (-identity [this]
     "Return an identifier for this data source.
-    Used for caching, note that data Sources of different types are cached separately.")
+    Used for caching, note that data sources of different types are cached separately.")
   (-fetch [this env]
     "Fetch this data source "))
 
