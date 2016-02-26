@@ -218,7 +218,7 @@
         requests (next-level ast-node)]
     (if-not (seq requests)
       (if (-done? ast-node)
-        (success! (:value ast-node))
+        (success! [(:value ast-node) cache])
         (recur ast-node opts success! error!))
       (let [requests-by-type (group-by resource-name requests)
             responses (map (partial fetch-resource executor) requests-by-type)]
@@ -247,8 +247,31 @@
 (def run-defaults {:cache {}
                    :executor default-executor})
 
+(defn execute!
+  "Executes the data fetching, returning a promise of the `[cache result]`
+  pair.
+
+   * fetch data sources concurrently (when possible)
+   * cache result of previously made fetches
+   * batch calls to the same data source (when applicable)
+
+  You can pass a second argument with the following options:
+
+  - `:cache`: A map to use as the cache.
+
+  - `:executor`: An implementation of `IExecutor` that will be used
+   to run the fetches. Defaults to `urania.core/default-executor`.
+
+   In Clojure you can pass a `java.util.concurrent.Executor` instance."
+  ([ast]
+   (execute! ast run-defaults))
+  ([ast opts]
+   (prom/promise
+    (fn [resolve reject]
+      (interpret-ast ast (merge run-defaults opts) resolve reject)))))
+
 (defn run!
-  "Executes the data fetching, returning a promise.
+  "Executes the data fetching, returning a promise of the result.
 
    * fetch data sources concurrently (when possible)
    * cache result of previously made fetches
@@ -265,17 +288,15 @@
   ([ast]
    (run! ast run-defaults))
   ([ast opts]
-   (prom/promise
-    (fn [resolve reject]
-      (interpret-ast ast (merge run-defaults opts) resolve reject)))))
+   (prom/then (execute! ast opts) first)))
 
 #?(:clj
    (defn run!!
-     "Dereferences the the promise returned by `run!`.
-     Will block if nothing is available.
+     "Dereferences the the promise returned by `run!`, blocking until
+     a result is available.
 
-     Not available on ClojureScript."
+     Not implemented on ClojureScript."
      ([ast]
-      (deref (run! ast)))
+      (deref (run! ast {})))
      ([ast opts]
       (deref (run! ast opts)))))
