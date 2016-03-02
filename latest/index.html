@@ -1011,12 +1011,13 @@ that the library provides: <code>urania.core/value</code>. First of all, let&#82
 <div class="listingblock">
 <div class="content">
 <pre class="pygments highlight"><code data-lang="clojure"><span class="tok-p">(</span><span class="tok-nf">u/run!!</span> <span class="tok-p">(</span><span class="tok-nf">friends-with-pets</span> <span class="tok-mi">3</span><span class="tok-p">))</span>
-<span class="tok-nv">--&gt;</span><span class="tok-p">[</span> <span class="tok-mi">3</span> <span class="tok-p">]</span> <span class="tok-nv">waiting</span> <span class="tok-mf">510.9166733502036</span>
-<span class="tok-nv">&lt;--</span><span class="tok-p">[</span> <span class="tok-mi">3</span> <span class="tok-p">]</span> <span class="tok-nv">finished</span>, <span class="tok-nv">result</span><span class="tok-err">:</span> <span class="tok-o">#</span><span class="tok-p">{</span><span class="tok-mi">0</span> <span class="tok-mi">1</span> <span class="tok-mi">2</span><span class="tok-p">}</span>
-<span class="tok-nv">--&gt;</span><span class="tok-p">[</span> <span class="tok-mi">0</span> <span class="tok-p">]</span> <span class="tok-nv">waiting</span> <span class="tok-mf">936.1072648404947</span>
-<span class="tok-nv">--&gt;</span><span class="tok-p">[</span> <span class="tok-mi">2</span> <span class="tok-p">]</span> <span class="tok-nv">waiting</span> <span class="tok-mf">145.6521664212589</span>
-<span class="tok-nv">&lt;--</span><span class="tok-p">[</span> <span class="tok-mi">2</span> <span class="tok-p">]</span> <span class="tok-nv">finished</span>, <span class="tok-nv">result</span><span class="tok-err">:</span> <span class="tok-ss">:dog</span>
-<span class="tok-nv">&lt;--</span><span class="tok-p">[</span> <span class="tok-mi">0</span> <span class="tok-p">]</span> <span class="tok-nv">finished</span>, <span class="tok-nv">result</span><span class="tok-err">:</span> <span class="tok-ss">:dog</span></code></pre>
+<span class="tok-c1">;; --&gt;[ 3 ] waiting 510.9166733502036</span>
+<span class="tok-c1">;; &lt;--[ 3 ] finished, result: #{0 1 2}</span>
+<span class="tok-c1">;; --&gt;[ 0 ] waiting 936.1072648404947</span>
+<span class="tok-c1">;; --&gt;[ 2 ] waiting 145.6521664212589</span>
+<span class="tok-c1">;; &lt;--[ 2 ] finished, result: :dog</span>
+<span class="tok-c1">; &lt;--[ 0 ] finished, result: :dog</span>
+<span class="tok-c1">;; =&gt; [:dog :no-pet :dog]</span></code></pre>
 </div>
 </div>
 </div>
@@ -1229,7 +1230,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</code></pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2016-03-02 11:09:50 CET
+Last updated 2016-03-02 11:49:58 CET
 </div>
 </div>
 </body>
