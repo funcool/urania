@@ -312,6 +312,16 @@ it will detect and eliminate duplicate requests:
 See how the friends of the user with id `2` are only fetched once, even when is duplicated in the collection passed to
 `urania.core/collect`.
 
+The above pattern of using `collect` and `mapcat` is captured by the `urania.core/traverse` combinator so we can just write:
+
+[source, clojure]
+----
+(defn friends-activity
+  [id]
+  (u/traverse activity (friends-of id)))
+----
+
+
 ==== Batching requests
 
 We've seen that `urania` organizes and deduplicates fetches for us but there is still room for improvement. In our
@@ -347,7 +357,62 @@ Let's try to run our `friends-activity` again:
 ----
 
 Our previous fetch of `(friends-activity 5)` did `n + 1` requests to fetch remote data, where `n` is
-the number of results of the first query, and we've been able to reduce it to 2!
+the number of results of the first query, and we've been able to reduce it to 2! This is called the
+N + 1 selects problem and `urania` solves it nicely.
+
+==== Fetching data conditionally
+
+Sometimes we want to fetch some data conditionally. For example, when one of our data sources may have
+a relation with another but this relation is conditional, we may want to fetch the related data of the
+ones that have it.
+
+Let's imagine for a moment that some friends may have a pet associated. For simplicity, we will assume
+that users with an even id have a pet, and users with an odd id don't. In real examples you may want to
+inspect the user's payload and make the decision accordingly.
+
+We want to fetch the pet for those users that have it, so how do we solve this? We can use another combinator
+that the library provides: `urania.core/value`. First of all, let's define the data source for pets.
+
+[source, clojure]
+----
+(defrecord Pet [id]
+  u/DataSource
+  (-identity [_] id)
+  (-fetch [_ _]
+    (remote-req id :dog)))
+
+(defn pet
+  [id]
+  (Pet. id))
+----
+
+Now that we have it, we can define a function for fetching our friends and their pets:
+
+[source, clojure]
+----
+(defn friends-with-pets
+  [id]
+  (u/traverse (fn [usr]
+  	      	       (if (even? usr)
+              	          (pet usr)
+			  (u/value :no-pet)))
+		    (friends-of id)))
+----
+
+
+Note how requests for a pet only are sent when the user has a pet:
+
+[source, clojure]
+----
+(u/run!! (friends-with-pets 3))
+-->[ 3 ] waiting 510.9166733502036
+<--[ 3 ] finished, result: #{0 1 2}
+-->[ 0 ] waiting 936.1072648404947
+-->[ 2 ] waiting 145.6521664212589
+<--[ 2 ] finished, result: :dog
+<--[ 0 ] finished, result: :dog
+----
+
 
 == Advanced usage
 
