@@ -412,7 +412,7 @@ Note how requests for a pet only are sent when the user has a pet:
 ;; -->[ 0 ] waiting 936.1072648404947
 ;; -->[ 2 ] waiting 145.6521664212589
 ;; <--[ 2 ] finished, result: :dog
-; <--[ 0 ] finished, result: :dog
+;; <--[ 0 ] finished, result: :dog
 ;; => [:dog :no-pet :dog]
 ----
 
