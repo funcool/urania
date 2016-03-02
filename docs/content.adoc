@@ -407,12 +407,13 @@ Note how requests for a pet only are sent when the user has a pet:
 [source, clojure]
 ----
 (u/run!! (friends-with-pets 3))
--->[ 3 ] waiting 510.9166733502036
-<--[ 3 ] finished, result: #{0 1 2}
--->[ 0 ] waiting 936.1072648404947
--->[ 2 ] waiting 145.6521664212589
-<--[ 2 ] finished, result: :dog
-<--[ 0 ] finished, result: :dog
+;; -->[ 3 ] waiting 510.9166733502036
+;; <--[ 3 ] finished, result: #{0 1 2}
+;; -->[ 0 ] waiting 936.1072648404947
+;; -->[ 2 ] waiting 145.6521664212589
+;; <--[ 2 ] finished, result: :dog
+; <--[ 0 ] finished, result: :dog
+;; => [:dog :no-pet :dog]
 ----
 
 
