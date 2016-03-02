@@ -390,13 +390,15 @@ Now that we have it, we can define a function for fetching our friends and their
 
 [source, clojure]
 ----
+(defn fetch-pet
+  [usr]
+  (if (even? usr)
+    (pet usr)
+    (u/value :no-pet)))
+
 (defn friends-with-pets
   [id]
-  (u/traverse (fn [usr]
-  	      	       (if (even? usr)
-              	          (pet usr)
-			  (u/value :no-pet)))
-		    (friends-of id)))
+  (u/traverse fetch-pet (friends-of id)))
 ----
 
 
@@ -512,7 +514,7 @@ exception:
   u/DataSource
   (-identity [_] id)
   (-fetch [_ env] (prom/resolved env))
-  
+
   u/BatchedSource
   (-fetch-multi [_ envs env]
     (let [ids (cons id (map :id envs))]
