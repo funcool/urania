@@ -906,6 +906,16 @@ it will detect and eliminate duplicate requests:</p>
 <p>See how the friends of the user with id <code>2</code> are only fetched once, even when is duplicated in the collection passed to
 <code>urania.core/collect</code>.</p>
 </div>
+<div class="paragraph">
+<p>The above pattern of using <code>collect</code> and <code>mapcat</code> is captured by the <code>urania.core/traverse</code> combinator so we can just write:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="pygments highlight"><code data-lang="clojure"><span class="tok-p">(</span><span class="tok-kd">defn </span><span class="tok-nv">friends-activity</span>
+  <span class="tok-p">[</span><span class="tok-nv">id</span><span class="tok-p">]</span>
+  <span class="tok-p">(</span><span class="tok-nf">u/traverse</span> <span class="tok-nv">activity</span> <span class="tok-p">(</span><span class="tok-nf">friends-of</span> <span class="tok-nv">id</span><span class="tok-p">)))</span></code></pre>
+</div>
+</div>
 </div>
 <div class="sect3">
 <h4 id="batching-requests"><a class="link" href="#batching-requests">3.3.3. Batching requests</a></h4>
@@ -946,7 +956,68 @@ map from the data source identities to their results.</p>
 </div>
 <div class="paragraph">
 <p>Our previous fetch of <code>(friends-activity 5)</code> did <code>n + 1</code> requests to fetch remote data, where <code>n</code> is
-the number of results of the first query, and we&#8217;ve been able to reduce it to 2!</p>
+the number of results of the first query, and we&#8217;ve been able to reduce it to 2! This is called the
+N + 1 selects problem and <code>urania</code> solves it nicely.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="fetching-data-conditionally"><a class="link" href="#fetching-data-conditionally">3.3.4. Fetching data conditionally</a></h4>
+<div class="paragraph">
+<p>Sometimes we want to fetch some data conditionally. For example, when one of our data sources may have
+a relation with another but this relation is conditional, we may want to fetch the related data of the
+ones that have it.</p>
+</div>
+<div class="paragraph">
+<p>Let&#8217;s imagine for a moment that some friends may have a pet associated. For simplicity, we will assume
+that users with an even id have a pet, and users with an odd id don&#8217;t. In real examples you may want to
+inspect the user&#8217;s payload and make the decision accordingly.</p>
+</div>
+<div class="paragraph">
+<p>We want to fetch the pet for those users that have it, so how do we solve this? We can use another combinator
+that the library provides: <code>urania.core/value</code>. First of all, let&#8217;s define the data source for pets.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="pygments highlight"><code data-lang="clojure"><span class="tok-p">(</span><span class="tok-kd">defrecord </span><span class="tok-nv">Pet</span> <span class="tok-p">[</span><span class="tok-nv">id</span><span class="tok-p">]</span>
+  <span class="tok-nv">u/DataSource</span>
+  <span class="tok-p">(</span><span class="tok-nf">-identity</span> <span class="tok-p">[</span><span class="tok-nv">_</span><span class="tok-p">]</span> <span class="tok-nv">id</span><span class="tok-p">)</span>
+  <span class="tok-p">(</span><span class="tok-nf">-fetch</span> <span class="tok-p">[</span><span class="tok-nv">_</span> <span class="tok-nv">_</span><span class="tok-p">]</span>
+    <span class="tok-p">(</span><span class="tok-nf">remote-req</span> <span class="tok-nv">id</span> <span class="tok-ss">:dog</span><span class="tok-p">)))</span>
+
+<span class="tok-p">(</span><span class="tok-kd">defn </span><span class="tok-nv">pet</span>
+  <span class="tok-p">[</span><span class="tok-nv">id</span><span class="tok-p">]</span>
+  <span class="tok-p">(</span><span class="tok-nf">Pet.</span> <span class="tok-nv">id</span><span class="tok-p">))</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Now that we have it, we can define a function for fetching our friends and their pets:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="pygments highlight"><code data-lang="clojure"><span class="tok-p">(</span><span class="tok-kd">defn </span><span class="tok-nv">fetch-pet</span>
+  <span class="tok-p">[</span><span class="tok-nv">usr</span><span class="tok-p">]</span>
+  <span class="tok-p">(</span><span class="tok-k">if </span><span class="tok-p">(</span><span class="tok-nf">even?</span> <span class="tok-nv">usr</span><span class="tok-p">)</span>
+    <span class="tok-p">(</span><span class="tok-nf">pet</span> <span class="tok-nv">usr</span><span class="tok-p">)</span>
+    <span class="tok-p">(</span><span class="tok-nf">u/value</span> <span class="tok-ss">:no-pet</span><span class="tok-p">)))</span>
+
+<span class="tok-p">(</span><span class="tok-kd">defn </span><span class="tok-nv">friends-with-pets</span>
+  <span class="tok-p">[</span><span class="tok-nv">id</span><span class="tok-p">]</span>
+  <span class="tok-p">(</span><span class="tok-nf">u/traverse</span> <span class="tok-nv">fetch-pet</span> <span class="tok-p">(</span><span class="tok-nf">friends-of</span> <span class="tok-nv">id</span><span class="tok-p">)))</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Note how requests for a pet only are sent when the user has a pet:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="pygments highlight"><code data-lang="clojure"><span class="tok-p">(</span><span class="tok-nf">u/run!!</span> <span class="tok-p">(</span><span class="tok-nf">friends-with-pets</span> <span class="tok-mi">3</span><span class="tok-p">))</span>
+<span class="tok-nv">--&gt;</span><span class="tok-p">[</span> <span class="tok-mi">3</span> <span class="tok-p">]</span> <span class="tok-nv">waiting</span> <span class="tok-mf">510.9166733502036</span>
+<span class="tok-nv">&lt;--</span><span class="tok-p">[</span> <span class="tok-mi">3</span> <span class="tok-p">]</span> <span class="tok-nv">finished</span>, <span class="tok-nv">result</span><span class="tok-err">:</span> <span class="tok-o">#</span><span class="tok-p">{</span><span class="tok-mi">0</span> <span class="tok-mi">1</span> <span class="tok-mi">2</span><span class="tok-p">}</span>
+<span class="tok-nv">--&gt;</span><span class="tok-p">[</span> <span class="tok-mi">0</span> <span class="tok-p">]</span> <span class="tok-nv">waiting</span> <span class="tok-mf">936.1072648404947</span>
+<span class="tok-nv">--&gt;</span><span class="tok-p">[</span> <span class="tok-mi">2</span> <span class="tok-p">]</span> <span class="tok-nv">waiting</span> <span class="tok-mf">145.6521664212589</span>
+<span class="tok-nv">&lt;--</span><span class="tok-p">[</span> <span class="tok-mi">2</span> <span class="tok-p">]</span> <span class="tok-nv">finished</span>, <span class="tok-nv">result</span><span class="tok-err">:</span> <span class="tok-ss">:dog</span>
+<span class="tok-nv">&lt;--</span><span class="tok-p">[</span> <span class="tok-mi">0</span> <span class="tok-p">]</span> <span class="tok-nv">finished</span>, <span class="tok-nv">result</span><span class="tok-err">:</span> <span class="tok-ss">:dog</span></code></pre>
+</div>
 </div>
 </div>
 </div>
@@ -1158,7 +1229,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</code></pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2016-02-26 17:49:24 CET
+Last updated 2016-03-02 11:09:50 CET
 </div>
 </div>
 </body>
