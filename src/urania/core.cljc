@@ -117,6 +117,8 @@
 ;; Combinators
 
 (defn value
+  "Given a plain value, wrap it in a data source that will return the
+  value immediately."
   [v]
   (assert (not (ast? v))
           (str "The value is already an AST: " v))
