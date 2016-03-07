@@ -55,7 +55,7 @@
   (-done? [_] false)
   (-inject [_ env]
     (let [next (clojure.core/map (partial inject-into env) values)]
-      (if (= (count next) (count (filter -done? next)))
+      (if (every? -done? next)
         (Done. (apply f (clojure.core/map :value next)))
         (Map. f next)))))
 
@@ -77,7 +77,9 @@
       (if (every? -done? next)
         (let [result (apply f (clojure.core/map :value next))]
           ;; xxx: refactor to avoid dummy leaves creation
-          (if (satisfies? DataSource result) (Map. identity [result]) result))
+          (if (satisfies? DataSource result)
+            (Map. identity [result])
+            result))
         (FlatMap. f next)))))
 
 (deftype Value [value]
