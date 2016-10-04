@@ -125,7 +125,17 @@
                                          (u/cache-id t20) 20}}]
        (is (= 40
               (u/run!! (u/map + t10 t10 t20) {:cache cache})))
-       (is (= 0 @t))))
+       (is (= 0 @t)))
+
+     (let [t (atom 0)
+           t10 (Trackable. t 10)
+           t20 (Trackable. t 20)
+           cache {(u/resource-name t10) {(u/cache-id t10) 10}}]
+        (is (= [30 {(u/resource-name t10) {(u/cache-id t10) 10
+                                           (u/cache-id t20) 20}}]
+               (deref (u/execute! (u/map + t10 t20) {:cache cache}))))
+        (is (= 1 @t))))
+
    :cljs
    (deftest prepopulated-cache
      (let [t (atom 0)
@@ -162,18 +172,30 @@
 
 #?(:clj
    (deftest caching-multiple-levels
-     (let [t3 (atom 0)]
-       (assert-ast 140 (u/map +
-                             (Trackable. t3 50)
-                             (u/map (fn [[a b]] (+ a b))
-                                   (u/collect [(Trackable. t3 40) (Trackable. t3 50)]))))
-       (is (= 2 @t3)))
      (let [t4 (atom 0)]
        (assert-ast 1400 (u/map +
-                              (Trackable. t4 500)
-                              (u/map (fn [[a b]] (+ a b))
-                                    (u/collect [(Trackable. t4 400) (Trackable. t4 500)]))))
-       (is (= 2 @t4)))))
+                               (Trackable. t4 500)
+                               (u/map (fn [[a b]] (+ a b))
+                                      (u/collect [(Trackable. t4 400) (Trackable. t4 500)]))))
+       (is (= 2 @t4)))
+
+     (let [t4 (atom 0)]
+       (assert-ast 100 (u/map +
+                              (Trackable. t4 50)
+                              (u/mapcat
+                                (fn [n] (Trackable. t4 n))
+                                (Trackable. t4 50))))
+       (is (= 1 @t4)))
+
+     (let [t4 (atom 0)]
+       (assert-ast 100 (u/map +
+                              (Trackable. t4 50)
+                              (u/mapcat
+                                (fn [n] (u/mapcat
+                                          (fn [m] (Trackable. t4 m))
+                                          (Trackable. t4 n)))
+                                (Trackable. t4 50))))
+       (is (= 1 @t4)))))
 
 #?(:cljs
    (deftest caching-multiple-levels
@@ -182,7 +204,26 @@
                              (Trackable. t3 50)
                              (u/map (fn [[a b]] (+ a b))
                                    (u/collect [(Trackable. t3 40) (Trackable. t3 50)])))
-                   (fn [] (is (= 2 @t3)))))))
+                   (fn [] (is (= 2 @t3)))))
+
+
+     (let [t3 (atom 0)]
+       (assert-ast 100 (u/map +
+                              (Trackable. t3 50)
+                              (u/mapcat
+                                (fn [n] (Trackable. t3 n))
+                                (Trackable. t3 50)))
+                   (fn [] (is (= 1 @t3)))))
+
+     (let [t3 (atom 0)]
+       (assert-ast 100 (u/map +
+                              (Trackable. t3 50)
+                              (u/mapcat
+                                (fn [n] (u/mapcat
+                                          (fn [m] (Trackable. t3 m))
+                                          (Trackable. t3 n)))
+                                (Trackable. t3 50)))
+                   (fn [] (is (= 1 @t3)))))))
 
 ;; batching
 
