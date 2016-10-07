@@ -75,7 +75,7 @@
   (-inject [_ env]
     (let [next (clojure.core/map (partial inject-into env) values)]
       (if (every? -done? next)
-        (let [result (apply f (clojure.core/map :value next))]
+        (let [result (inject-into env (apply f (clojure.core/map :value next)))]
           ;; xxx: refactor to avoid dummy leaves creation
           (if (satisfies? DataSource result)
             (Map. identity [result])
@@ -228,7 +228,7 @@
             responses (clojure.core/map (partial fetch-resource opts) requests-by-type)]
         (prom/branch (prom/all responses)
                      (fn [results]
-                       (let [next-cache (into cache results)
+                       (let [next-cache (merge-with merge cache (into {} results))
                              next-opts (assoc opts :cache next-cache)]
                          (interpret-ast ast-node next-opts success! error!)))
                      error!)))))
