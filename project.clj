@@ -1,4 +1,4 @@
-(defproject funcool/urania "0.1.0"
+(defproject funcool/urania "0.1.1"
   :description "Elegant and Efficient remote data access for Clojure(Script)"
   :url "https://github.com/funcool/urania"
   :license {:name "The MIT License"
