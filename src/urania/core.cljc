@@ -24,6 +24,11 @@
     "Fetch this and other data sources in a single batch.
     The returned promise must be a map from the data source identities to their results."))
 
+(defprotocol Cache
+  "A lookup for previously fetched responses"
+  (-get [this resource-name cache-id not-found])
+  (-into [this responses-by-resource-name]))
+
 ;; AST
 
 (declare inject-into)
@@ -102,11 +107,9 @@
   [res]
   (-identity res))
 
-(def cache-path (juxt resource-name cache-id))
-
 (defn- cached-or [env res]
   (let [cache (get env :cache)
-        cached (get-in cache (cache-path res) ::not-found)]
+        cached (-get cache (resource-name res) (cache-id res) ::not-found)]
     (if (= ::not-found cached)
       (Map. identity [res])
       (Done. cached))))
@@ -228,7 +231,7 @@
             responses (clojure.core/map (partial fetch-resource opts) requests-by-type)]
         (prom/branch (prom/all responses)
                      (fn [results]
-                       (let [next-cache (merge-with merge cache (into {} results))
+                       (let [next-cache (-into cache (into {} results))
                              next-opts (assoc opts :cache next-cache)]
                          (interpret-ast ast-node next-opts success! error!)))
                      error!)))))
@@ -247,6 +250,22 @@
      (reify IExecutor
        (-execute [_ task]
          (js/setTimeout task 0)))))
+
+(extend-protocol Cache
+  #?(:clj clojure.lang.APersistentMap
+     :cljs cljs.core.PersistentArrayMap)
+  (-get [this resource-name cache-id not-found]
+    (get-in this [resource-name cache-id] not-found))
+  (-into [this responses-by-resource-name]
+    (merge-with merge this responses-by-resource-name))
+
+  #?(:cljs cljs.core.PersistentHashMap)
+  #?(:cljs
+     (-get [this resource-name cache-id not-found]
+           (get-in this [resource-name cache-id] not-found)))
+  #?(:cljs
+     (-into [this responses-by-resource-name]
+            (merge-with merge this responses-by-resource-name))))
 
 (def run-defaults {:cache {}
                    :executor default-executor})
