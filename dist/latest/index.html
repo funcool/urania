@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <!--[if IE]><meta http-equiv="X-UA-Compatible" content="IE=edge"><![endif]-->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="generator" content="Asciidoctor 1.5.3">
+<meta name="generator" content="Asciidoctor 1.5.4">
 <meta name="author" content="Funcool">
 <title>Urania documentation</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
@@ -424,8 +424,10 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 .listingblock .pygments .tok-err { border: 1px solid #FF0000 } /* Error */
 .listingblock .pygments .tok-k { color: #007020; font-weight: bold } /* Keyword */
 .listingblock .pygments .tok-o { color: #666666 } /* Operator */
+.listingblock .pygments .tok-ch { color: #60a0b0; font-style: italic } /* Comment.Hashbang */
 .listingblock .pygments .tok-cm { color: #60a0b0; font-style: italic } /* Comment.Multiline */
 .listingblock .pygments .tok-cp { color: #007020 } /* Comment.Preproc */
+.listingblock .pygments .tok-cpf { color: #60a0b0; font-style: italic } /* Comment.PreprocFile */
 .listingblock .pygments .tok-c1 { color: #60a0b0; font-style: italic } /* Comment.Single */
 .listingblock .pygments .tok-cs { color: #60a0b0; background-color: #fff0f0 } /* Comment.Special */
 .listingblock .pygments .tok-gd { color: #A00000 } /* Generic.Deleted */
@@ -465,8 +467,10 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 .listingblock .pygments .tok-mh { color: #40a070 } /* Literal.Number.Hex */
 .listingblock .pygments .tok-mi { color: #40a070 } /* Literal.Number.Integer */
 .listingblock .pygments .tok-mo { color: #40a070 } /* Literal.Number.Oct */
+.listingblock .pygments .tok-sa { color: #4070a0 } /* Literal.String.Affix */
 .listingblock .pygments .tok-sb { color: #4070a0 } /* Literal.String.Backtick */
 .listingblock .pygments .tok-sc { color: #4070a0 } /* Literal.String.Char */
+.listingblock .pygments .tok-dl { color: #4070a0 } /* Literal.String.Delimiter */
 .listingblock .pygments .tok-sd { color: #4070a0; font-style: italic } /* Literal.String.Doc */
 .listingblock .pygments .tok-s2 { color: #4070a0 } /* Literal.String.Double */
 .listingblock .pygments .tok-se { color: #4070a0; font-weight: bold } /* Literal.String.Escape */
@@ -477,9 +481,11 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 .listingblock .pygments .tok-s1 { color: #4070a0 } /* Literal.String.Single */
 .listingblock .pygments .tok-ss { color: #517918 } /* Literal.String.Symbol */
 .listingblock .pygments .tok-bp { color: #007020 } /* Name.Builtin.Pseudo */
+.listingblock .pygments .tok-fm { color: #06287e } /* Name.Function.Magic */
 .listingblock .pygments .tok-vc { color: #bb60d5 } /* Name.Variable.Class */
 .listingblock .pygments .tok-vg { color: #bb60d5 } /* Name.Variable.Global */
 .listingblock .pygments .tok-vi { color: #bb60d5 } /* Name.Variable.Instance */
+.listingblock .pygments .tok-vm { color: #bb60d5 } /* Name.Variable.Magic */
 .listingblock .pygments .tok-il { color: #40a070 } /* Literal.Number.Integer.Long */
 </style>
 </head>
@@ -1035,10 +1041,10 @@ that the library provides: <code>urania.core/value</code>. First of all, let&#82
 <div class="paragraph">
 <p><code>urania</code> stores intermediate results in a cache, grouping data sources by their name and mapping their
 identity to the fetched value. You can run a fetch and get back both the final cache and the results using
-<code>urania.core/evaluate!</code> instead of <code>urania.core/run!</code>.</p>
+<code>urania.core/execute!</code> instead of <code>urania.core/run!</code>.</p>
 </div>
 <div class="paragraph">
-<p>Let&#8217;s define a simple data source and fetch some results with <code>urania.core/evaluate!</code> to see the cached
+<p>Let&#8217;s define a simple data source and fetch some results with <code>urania.core/execute!</code> to see the cached
 values:</p>
 </div>
 <div class="listingblock">
@@ -1049,7 +1055,7 @@ values:</p>
   <span class="tok-p">(</span><span class="tok-nf">-fetch</span> <span class="tok-p">[</span><span class="tok-nv">_</span> <span class="tok-nv">_</span><span class="tok-p">]</span> <span class="tok-p">(</span><span class="tok-nf">prom/resolved</span> <span class="tok-nv">result</span><span class="tok-p">)))</span>
 
 <span class="tok-p">(</span><span class="tok-nf">deref</span>
-  <span class="tok-p">(</span><span class="tok-nf">u/evaluate!</span> <span class="tok-p">(</span><span class="tok-nf">Simple.</span> <span class="tok-mi">1</span> <span class="tok-mi">42</span><span class="tok-p">)))</span>
+  <span class="tok-p">(</span><span class="tok-nf">u/execute!</span> <span class="tok-p">(</span><span class="tok-nf">Simple.</span> <span class="tok-mi">1</span> <span class="tok-mi">42</span><span class="tok-p">)))</span>
 <span class="tok-c1">;; =&gt; [42 {&quot;user.Simple&quot; {1 42}}]</span></code></pre>
 </div>
 </div>
@@ -1230,7 +1236,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</code></pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2016-03-02 11:50:34 CET
+Last updated 2017-12-06 09:49:56 GMT
 </div>
 </div>
 </body>
