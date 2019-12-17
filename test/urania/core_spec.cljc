@@ -1,12 +1,7 @@
 (ns urania.core-spec
-  #?(:clj
-     (:require [clojure.test :refer (deftest is)]
-               [promesa.core :as prom]
-               [urania.core :as u])
-     :cljs
-     (:require [cljs.test :refer-macros (deftest is async)]
-               [promesa.core :as prom]
-               [urania.core :as u])))
+  (:require [clojure.test :refer [deftest is] :refer-macros [async]]
+            [promesa.core :as prom]
+            [urania.core :as u]))
 
 (deftype DList [size]
   u/DataSource
@@ -18,7 +13,7 @@
   (-identity [_] size)
   (-fetch [_ _] (prom/rejected (ex-info "Invalid size" {:size size}))))
 
-(deftype Single [seed]
+(deftype SingleItem [seed]
   u/DataSource
   (-identity [_] seed)
   (-fetch [_ _] (prom/resolved seed)))
@@ -70,11 +65,11 @@
   (assert-ast 30 (u/map count (DList. 30)))
   (assert-ast 40 (u/map inc (u/map count (DList. 39))))
   (assert-ast 50 (u/map count (u/map concat (DList. 30) (DList. 20))))
-  (assert-ast 42 (u/mapcat id (Single. 42)))
+  (assert-ast 42 (u/mapcat id (SingleItem. 42)))
   (assert-ast 42 (u/mapcat id (u/value 42)))
-  (assert-ast [15 15] (u/mapcat mk-pair (Single. 15)))
+  (assert-ast [15 15] (u/mapcat mk-pair (SingleItem. 15)))
   (assert-ast [15 15] (u/mapcat mk-pair (u/value 15)))
-  (assert-ast 60 (u/map sum-pair (u/mapcat mk-pair (Single. 30))))
+  (assert-ast 60 (u/map sum-pair (u/mapcat mk-pair (SingleItem. 30))))
   (assert-ast 60 (u/map sum-pair (u/mapcat mk-pair (u/value 30)))))
 
 (deftest error-propagation
@@ -85,7 +80,7 @@
                     (DList. 10))))
 
 (deftest higher-level-api
-  (assert-ast [0 1] (u/collect [(Single. 0) (Single. 1)]))
+  (assert-ast [0 1] (u/collect [(SingleItem. 0) (SingleItem. 1)]))
   (assert-ast [] (u/collect []))
   (assert-ast [[0 0] [1 1]] (u/traverse mk-pair (DList. 2)))
   (assert-ast [] (u/traverse mk-pair (DList. 0))))
@@ -93,17 +88,17 @@
 (defn- recur-next [seed]
   (if (= 5 seed)
     (u/value seed)
-    (u/mapcat recur-next (Single. (inc seed)))))
+    (u/mapcat recur-next (SingleItem. (inc seed)))))
 
 (deftest recur-with-value
   (assert-ast 10 (u/value 10))
-  (assert-ast 5 (u/mapcat recur-next (Single. 0))))
+  (assert-ast 5 (u/mapcat recur-next (SingleItem. 0))))
 
 (defn- assert-failed? [f]
   (is (thrown? #?(:clj AssertionError :cljs js/Error) (f))))
 
 (deftest value-from-ast
-  (assert-failed? #(u/value (Single. 0)))
+  (assert-failed? #(u/value (SingleItem. 0)))
   (assert-failed? #(u/value (u/map inc (u/value 0)))))
 
 ;; attention! never do such mutations within "fetch" in real code
@@ -290,7 +285,7 @@
 
 #?(:clj
    (deftest accepts-any-java-util-concurrent-executor
-     (is (= 42 (u/run!! (u/map + (Single. 21) (Single. 21))
+     (is (= 42 (u/run!! (u/map + (SingleItem. 21) (SingleItem. 21))
                         {:executor (java.util.concurrent.Executors/newFixedThreadPool 2)})))))
 
 (def sync-executor
@@ -300,12 +295,12 @@
 
 #?(:clj
    (deftest accepts-a-custom-executor-implementation
-     (is (= 42 (u/run!! (u/map + (Single. 21) (Single. 21))
+     (is (= 42 (u/run!! (u/map + (SingleItem. 21) (SingleItem. 21))
                         {:executor sync-executor}))))
    :cljs
    (deftest accepts-a-custom-executor-implementation
      (assert-ast 42
-                 (u/map + (Single. 21) (Single. 21))
+                 (u/map + (SingleItem. 21) (SingleItem. 21))
                  identity
                  {:executor sync-executor})))
 
