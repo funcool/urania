@@ -534,6 +534,10 @@ exception:
 
 == Development
 
+=== Testing 
+
+`lein test && lein cljsbuild test`
+
 === Contributing
 
 Just open an issue or pull request.
