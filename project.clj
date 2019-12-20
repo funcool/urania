@@ -5,7 +5,7 @@
             :url "http://opensource.org/licenses/MIT"
             :distribution :repo}
   :global-vars {*warn-on-reflection* false}
-  :dependencies [[funcool/promesa "0.8.1" :scope "provided"]]
+  :dependencies [[funcool/promesa "4.0.2" :scope "provided"]]
 
   :test-paths ["test"]
 
@@ -23,8 +23,8 @@
                                    :target :nodejs
                                    :pretty-print true}}]}
 
-  :profiles {:dev {:dependencies [[org.clojure/clojure "1.7.0"]
-                                  [org.clojure/clojurescript "1.7.145"]
-                                  [funcool/promesa "0.8.1"]
+  :profiles {:dev {:dependencies [[org.clojure/clojure "1.10.1"]
+                                  [org.clojure/clojurescript "1.10.597"]
+                                  [funcool/promesa "4.0.2"]
                                   [datascript "0.13.2"]]
-                   :plugins [[lein-cljsbuild "1.1.1"]]}})
+                   :plugins [[lein-cljsbuild "1.1.7"]]}})

@@ -167,15 +167,19 @@
 
 (defn- run-fetch
   [{:keys [executor env]} muse]
-  (prom/promise
+  (prom/create
    (fn [resolve reject]
-     (-execute executor #(prom/branch (-fetch muse env) resolve reject)))))
+     (-execute executor #(-> (-fetch muse env)
+                             (prom/then resolve)
+                             (prom/catch reject))))))
 
 (defn- run-fetch-multi
   [{:keys [executor env]} muse muses]
-  (prom/promise
+  (prom/create
    (fn [resolve reject]
-     (-execute executor #(prom/branch (-fetch-multi muse muses env) resolve reject)))))
+     (-execute executor #(-> (-fetch-multi muse muses env)
+                             (prom/then resolve)
+                             (prom/catch reject))))))
 
 (defn- fetch-many-caching
   [opts sources]
@@ -229,12 +233,13 @@
         (recur ast-node opts success! error!))
       (let [requests-by-type (group-by resource-name requests)
             responses (clojure.core/map (partial fetch-resource opts) requests-by-type)]
-        (prom/branch (prom/all responses)
-                     (fn [results]
-                       (let [next-cache (-into cache (into {} results))
-                             next-opts (assoc opts :cache next-cache)]
-                         (interpret-ast ast-node next-opts success! error!)))
-                     error!)))))
+        (-> (prom/all responses)
+            (prom/then
+              (fn [results]
+                (let [next-cache (-into cache (into {} results))
+                      next-opts (assoc opts :cache next-cache)]
+                  (interpret-ast ast-node next-opts success! error!))))
+            (prom/catch error!))))))
 
 ;; Public API
 
@@ -292,7 +297,7 @@
   ([ast]
    (execute! ast run-defaults))
   ([ast opts]
-   (prom/promise
+   (prom/create
     (fn [resolve reject]
       (interpret-ast ast (merge run-defaults opts) resolve reject)))))
 
