@@ -1,6 +1,6 @@
 = Urania documentation
 Funcool
-0.1.0
+0.2.0
 :toc: left
 :numbered:
 :idseparator: -
@@ -31,7 +31,7 @@ it as a dependency in your *_project.clj_*:
 
 [source,clojure]
 ----
-[funcool/urania "0.1.0"]
+[funcool/urania "0.2.0"]
 ----
 
 === Limitations
