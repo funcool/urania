@@ -109,7 +109,7 @@ ClojureScript:
 (require '[promesa.core :as prom])
 
 (defn remote-req [id result]
-  (prom/promise
+  (prom/create
     (fn [resolve reject]
       (let [wait (rand 1000)]
        (println (str "-->[ " id " ] waiting " wait))
@@ -125,7 +125,7 @@ and in Clojure:
 (require '[promesa.core :as prom])
 
 (defn remote-req [id result]
-  (prom/promise
+  (prom/create
     (fn [resolve reject]
       (let [wait (rand 1000)]
         (println (str "-->[ " id " ] waiting " wait))
