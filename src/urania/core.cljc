@@ -7,10 +7,12 @@
   (:refer-clojure :exclude (map mapcat run!)))
 
 (defprotocol IExecutor
+  :extend-via-metadata true
   "A policy for executing tasks."
   (-execute [ex task] "Perform a task."))
 
 (defprotocol DataSource
+  :extend-via-metadata true
   "A remote data source."
   (-identity [this]
     "Return an identifier for this data source.
@@ -19,12 +21,14 @@
     "Fetch this data source "))
 
 (defprotocol BatchedSource
+  :extend-via-metadata true
   "A remote data source that can be fetched in batches."
   (-fetch-multi [this resources env]
     "Fetch this and other data sources in a single batch.
     The returned promise must be a map from the data source identities to their results."))
 
 (defprotocol Cache
+  :extend-via-metadata true
   "A lookup for previously fetched responses"
   (-get [this resource-name cache-id not-found])
   (-into [this responses-by-resource-name]))
@@ -34,11 +38,13 @@
 (declare inject-into)
 
 (defprotocol AST
+  :extend-via-metadata true
   (-children [this])
   (-inject [this env])
   (-done? [this]))
 
 (defprotocol ComposedAST
+  :extend-via-metadata true
   (-compose-ast [this f]))
 
 (defrecord Done [value]
