@@ -3,8 +3,23 @@
             [clojure.string :as s])
   #?(:clj
      (:import java.util.concurrent.ForkJoinPool
-              java.util.concurrent.Executor))
-  (:refer-clojure :exclude (map mapcat run!)))
+              java.util.concurrent.Executor
+              (clojure.lang IMeta)))
+  (:refer-clojure :exclude (map mapcat run! satisfies?)))
+
+(defn satisfies?
+  "Returns true if `x` implements `protocol`.
+  Behaves exactly as its clojure.core counterpart, except that it also checks for metadata-based implementations.
+  Note that matching clojure.core's behavior also means that `true` will be returned for _partial _metadata-based implementations.
+  Works around https://dev.clojure.org/jira/browse/CLJ-2426."
+  [{:keys [extend-via-metadata method-builders] :as protocol}
+   val]
+  (or (and extend-via-metadata
+           (instance? IMeta val)
+           (some (partial contains? (meta val))
+                 (clojure.core/map symbol (keys method-builders))))
+      #?(:clj  (clojure.core/satisfies? protocol val)
+         :cljs (cljs.core/satisfies? protocol val))))
 
 (defprotocol IExecutor
   :extend-via-metadata true

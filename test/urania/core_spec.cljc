@@ -1,5 +1,5 @@
 (ns urania.core-spec
-  (:require [clojure.test :refer [deftest is] :refer-macros [async]]
+  (:require [clojure.test :refer [deftest is testing] :refer-macros [async]]
             [promesa.core :as prom]
             [urania.core :as u]))
 
@@ -339,3 +339,16 @@
                  (u/collect [(Environment. 42) (Environment. 99)])
                  identity
                  {:env :the-environment})))
+
+(deftest satisfies?-test
+  (testing "reified type"
+    (let [example (reify u/IExecutor
+                    (-execute [_ task]
+                      (task)))]
+      (is (true?  (u/satisfies? u/IExecutor  example)))
+      (is (false? (u/satisfies? u/DataSource example)))))
+
+  (testing "metadata"
+    (let [example (with-meta {} {`u/-execute (fn [_ task] (task))})]
+      (is (true?  (u/satisfies? u/IExecutor  example)))
+      (is (false? (u/satisfies? u/DataSource example))))))
