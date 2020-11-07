@@ -3,14 +3,31 @@
             [clojure.string :as s])
   #?(:clj
      (:import java.util.concurrent.ForkJoinPool
-              java.util.concurrent.Executor))
-  (:refer-clojure :exclude (map mapcat run!)))
+              java.util.concurrent.Executor
+              (clojure.lang IMeta)))
+  (:refer-clojure :exclude (map mapcat run! satisfies?)))
+
+(defn satisfies?
+  "Returns true if `x` implements `protocol`.
+  Behaves exactly as its clojure.core counterpart, except that it also checks for metadata-based implementations.
+  Note that matching clojure.core's behavior also means that `true` will be returned for _partial _metadata-based implementations.
+  Works around https://dev.clojure.org/jira/browse/CLJ-2426."
+  [{:keys [extend-via-metadata method-builders] :as protocol}
+   val]
+  (or (and extend-via-metadata
+           (instance? IMeta val)
+           (some (partial contains? (meta val))
+                 (clojure.core/map symbol (keys method-builders))))
+      #?(:clj  (clojure.core/satisfies? protocol val)
+         :cljs (cljs.core/satisfies? protocol val))))
 
 (defprotocol IExecutor
+  :extend-via-metadata true
   "A policy for executing tasks."
   (-execute [ex task] "Perform a task."))
 
 (defprotocol DataSource
+  :extend-via-metadata true
   "A remote data source."
   (-identity [this]
     "Return an identifier for this data source.
@@ -19,12 +36,14 @@
     "Fetch this data source "))
 
 (defprotocol BatchedSource
+  :extend-via-metadata true
   "A remote data source that can be fetched in batches."
   (-fetch-multi [this resources env]
     "Fetch this and other data sources in a single batch.
     The returned promise must be a map from the data source identities to their results."))
 
 (defprotocol Cache
+  :extend-via-metadata true
   "A lookup for previously fetched responses"
   (-get [this resource-name cache-id not-found])
   (-into [this responses-by-resource-name]))
@@ -34,11 +53,13 @@
 (declare inject-into)
 
 (defprotocol AST
+  :extend-via-metadata true
   (-children [this])
   (-inject [this env])
   (-done? [this]))
 
 (defprotocol ComposedAST
+  :extend-via-metadata true
   (-compose-ast [this f]))
 
 (defrecord Done [value]
