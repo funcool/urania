@@ -1,5 +1,5 @@
 (ns urania.core-spec
-  (:require [clojure.test :refer [deftest is testing] :refer-macros [async]]
+  (:require [clojure.test :refer [deftest is testing are] :refer-macros [async are]]
             [promesa.core :as prom]
             [urania.core :as u]))
 
@@ -17,6 +17,18 @@
   u/DataSource
   (-identity [_] seed)
   (-fetch [_ _] (prom/resolved seed)))
+
+(defn reified-single-item [seed]
+  ^{:type 'ReifiedSingleItem}
+   (reify u/DataSource
+     (-identity [_] seed)
+     (-fetch [_ _] (prom/resolved seed))))
+
+(defn metadata-single-item [seed]
+  ^{:type 'MetaSingleItem
+    `u/-identity (fn [_] seed)
+    `u/-fetch (fn [_ _] (prom/resolved seed))}
+  {})
 
 (deftype Pair [seed]
   u/DataSource
@@ -66,10 +78,16 @@
   (assert-ast 40 (u/map inc (u/map count (DList. 39))))
   (assert-ast 50 (u/map count (u/map concat (DList. 30) (DList. 20))))
   (assert-ast 42 (u/mapcat id (SingleItem. 42)))
+  (assert-ast 42 (u/mapcat id (reified-single-item 42)))
+  (assert-ast 42 (u/mapcat id (metadata-single-item 42)))
   (assert-ast 42 (u/mapcat id (u/value 42)))
   (assert-ast [15 15] (u/mapcat mk-pair (SingleItem. 15)))
+  (assert-ast [15 15] (u/mapcat mk-pair (reified-single-item 15)))
+  (assert-ast [15 15] (u/mapcat mk-pair (metadata-single-item 15)))
   (assert-ast [15 15] (u/mapcat mk-pair (u/value 15)))
   (assert-ast 60 (u/map sum-pair (u/mapcat mk-pair (SingleItem. 30))))
+  (assert-ast 60 (u/map sum-pair (u/mapcat mk-pair (reified-single-item 30))))
+  (assert-ast 60 (u/map sum-pair (u/mapcat mk-pair (metadata-single-item 30))))
   (assert-ast 60 (u/map sum-pair (u/mapcat mk-pair (u/value 30)))))
 
 (deftest error-propagation
@@ -81,6 +99,8 @@
 
 (deftest higher-level-api
   (assert-ast [0 1] (u/collect [(SingleItem. 0) (SingleItem. 1)]))
+  (assert-ast [0 1] (u/collect [(reified-single-item 0) (reified-single-item 1)]))
+  (assert-ast [0 1] (u/collect [(metadata-single-item 0) (metadata-single-item 1)]))
   (assert-ast [] (u/collect []))
   (assert-ast [[0 0] [1 1]] (u/traverse mk-pair (DList. 2)))
   (assert-ast [] (u/traverse mk-pair (DList. 0))))
@@ -109,116 +129,172 @@
     (swap! tracker inc)
     (prom/resolved seed)))
 
+(defn metadata-trackable [tracker seed]
+  ^{:type 'MetaTrackable
+    `u/-identity (fn [_] seed)
+    `u/-fetch (fn [_ _]
+                (swap! tracker inc)
+                (prom/resolved seed))}
+  {})
+
+(defn reified-trackable [tracker seed]
+  ^{:type 'ReifiedTrackable}
+   (reify u/DataSource
+     (-identity [_] seed)
+     (-fetch [_ _]
+       (swap! tracker inc)
+       (prom/resolved seed))))
+
 ;; caching
 
 #?(:clj
    (deftest prepopulated-cache
-     (let [t (atom 0)
-           t10 (Trackable. t 10)
-           t20 (Trackable. t 20)
-           cache {(u/resource-name t10) {(u/cache-id t10) 10
-                                         (u/cache-id t20) 20}}]
-       (is (= 40
-              (u/run!! (u/map + t10 t10 t20) {:cache cache})))
-       (is (= 0 @t)))
+     (are [f]  (let [t (atom 0)
+                     t10 (f t 10)
+                     t20 (f t 20)
+                     cache {(u/resource-name t10) {(u/cache-id t10) 10
+                                                   (u/cache-id t20) 20}}]
+                 (is (= 40
+                        (u/run!! (u/map + t10 t10 t20) {:cache cache})))
+                 (is (= 0 @t)))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable)
 
-     (let [t (atom 0)
-           t10 (Trackable. t 10)
-           t20 (Trackable. t 20)
-           cache {(u/resource-name t10) {(u/cache-id t10) 10}}]
-        (is (= [30 {(u/resource-name t10) {(u/cache-id t10) 10
-                                           (u/cache-id t20) 20}}]
-               (deref (u/execute! (u/map + t10 t20) {:cache cache}))))
-        (is (= 1 @t))))
+     (are [f] (let [t (atom 0)
+                    t10 (f t 10)
+                    t20 (f t 20)
+                    cache {(u/resource-name t10) {(u/cache-id t10) 10
+                                                  (u/cache-id t20) 20}}]
+                (is (= [30 {(u/resource-name t10) {(u/cache-id t10) 10
+                                                   (u/cache-id t20) 20}}]
+                       (deref (u/execute! (u/map + t10 t20) {:cache cache}))))
+                (is (= 0 @t)))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable))
 
    :cljs
    (deftest prepopulated-cache
-     (let [t (atom 0)
-           t10 (Trackable. t 10)
-           t20 (Trackable. t 20)
-           cache {(u/resource-name t10) {(u/cache-id t10) 10
-                                         (u/cache-id t20) 20}}]
-       (assert-ast 40
-                   (u/map + t10 t10 t20)
-                   (fn [] (is (= 0 @t)))
-                   {:cache cache}))))
+     (are [f] (let [t     (atom 0)
+                    t10   (f t 10)
+                    t20   (f t 20)
+                    cache {(u/resource-name t10) {(u/cache-id t10) 10
+                                                  (u/cache-id t20) 20}}]
+                (assert-ast 40
+                            (u/map + t10 t10 t20)
+                            (fn [] (is (= 0 @t)))
+                            {:cache cache}))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable)))
 
 #?(:clj
    (deftest caching
-     (let [t (atom 0)]
-       (assert-ast 40
-                   (u/map + (Trackable. t 10) (Trackable. t 10) (Trackable. t 20)))
-       (is (= 2 @t)))
-     (let [t1 (atom 0)]
-       (assert-ast 400
-                   (u/map + (Trackable. t1 100) (Trackable. t1 100) (Trackable. t1 200)))
-       (is (= 2 @t1))))
+     (are [f] (let [t (atom 0)]
+                (assert-ast 40
+                            (u/map + (f t 10) (f t 10) (f t 20)))
+                (is (= 2 @t)))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable)
+     (are [f] (let [t1 (atom 0)]
+                (assert-ast 400
+                            (u/map + (f t1 100) (f t1 100) (f t1 200)))
+                (is (= 2 @t1)))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable))
 
    :cljs
    (deftest caching
-     (let [t (atom 0)]
-       (assert-ast 40
-                   (u/map + (Trackable. t 10) (Trackable. t 10) (Trackable. t 20))
-                   (fn [] (is (= 2 @t)))))
-     (let [t1 (atom 0)]
-       (assert-ast 400
-                   (u/map + (Trackable. t1 100) (Trackable. t1 100) (Trackable. t1 200))
-                   (fn [] (is (= 2 @t1)))))))
+     (are [f] (let [t (atom 0)]
+                (assert-ast 40
+                            (u/map + (f t 10) (f t 10) (f t 20))
+                            (fn [] (is (= 2 @t)))))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable)
+     (are [f] (let [t1 (atom 0)]
+                (assert-ast 400
+                            (u/map + (f t1 100) (f t1 100) (f t1 200))
+                            (fn [] (is (= 2 @t1)))))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable)))
 
 #?(:clj
    (deftest caching-multiple-levels
-     (let [t4 (atom 0)]
-       (assert-ast 1400 (u/map +
-                               (Trackable. t4 500)
-                               (u/map (fn [[a b]] (+ a b))
-                                      (u/collect [(Trackable. t4 400) (Trackable. t4 500)]))))
-       (is (= 2 @t4)))
+     (are [f] (let [t4 (atom 0)]
+                (assert-ast 1400 (u/map +
+                                        (f t4 500)
+                                        (u/map (fn [[a b]] (+ a b))
+                                               (u/collect [(f t4 400) (f t4 500)]))))
+                (is (= 2 @t4)))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable)
 
-     (let [t4 (atom 0)]
-       (assert-ast 100 (u/map +
-                              (Trackable. t4 50)
-                              (u/mapcat
-                                (fn [n] (Trackable. t4 n))
-                                (Trackable. t4 50))))
-       (is (= 1 @t4)))
+     (are [f] (let [t4 (atom 0)]
+                (assert-ast 100 (u/map +
+                                       (f t4 50)
+                                       (u/mapcat
+                                        (fn [n] (f t4 n))
+                                        (f t4 50))))
+                (is (= 1 @t4)))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable)
 
-     (let [t4 (atom 0)]
-       (assert-ast 100 (u/map +
-                              (Trackable. t4 50)
-                              (u/mapcat
-                                (fn [n] (u/mapcat
-                                          (fn [m] (Trackable. t4 m))
-                                          (Trackable. t4 n)))
-                                (Trackable. t4 50))))
-       (is (= 1 @t4)))))
+     (are [f] (let [t4 (atom 0)]
+                (assert-ast 100 (u/map +
+                                       (f t4 50)
+                                       (u/mapcat
+                                        (fn [n] (u/mapcat
+                                                 (fn [m] (f t4 m))
+                                                 (f t4 n)))
+                                        (f t4 50))))
+                (is (= 1 @t4)))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable)))
 
 #?(:cljs
    (deftest caching-multiple-levels
-     (let [t3 (atom 0)]
-       (assert-ast 140 (u/map +
-                             (Trackable. t3 50)
-                             (u/map (fn [[a b]] (+ a b))
-                                   (u/collect [(Trackable. t3 40) (Trackable. t3 50)])))
-                   (fn [] (is (= 2 @t3)))))
+     (are [f] (let [t3 (atom 0)]
+                (assert-ast 140 (u/map +
+                                       (f t3 50)
+                                       (u/map (fn [[a b]] (+ a b))
+                                              (u/collect [(f t3 40) (f t3 50)])))
+                            (fn [] (is (= 2 @t3)))))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable)
 
 
-     (let [t3 (atom 0)]
-       (assert-ast 100 (u/map +
-                              (Trackable. t3 50)
-                              (u/mapcat
-                                (fn [n] (Trackable. t3 n))
-                                (Trackable. t3 50)))
-                   (fn [] (is (= 1 @t3)))))
+     (are [f] (let [t3 (atom 0)]
+                (assert-ast 100 (u/map +
+                                       (f t3 50)
+                                       (u/mapcat
+                                        (fn [n] (f t3 n))
+                                        (f t3 50)))
+                            (fn [] (is (= 1 @t3)))))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable)
 
-     (let [t3 (atom 0)]
-       (assert-ast 100 (u/map +
-                              (Trackable. t3 50)
-                              (u/mapcat
-                                (fn [n] (u/mapcat
-                                          (fn [m] (Trackable. t3 m))
-                                          (Trackable. t3 n)))
-                                (Trackable. t3 50)))
-                   (fn [] (is (= 1 @t3)))))))
+     (are [f] (let [t3 (atom 0)]
+                (assert-ast 100 (u/map +
+                                       (f t3 50)
+                                       (u/mapcat
+                                        (fn [n] (u/mapcat
+                                                 (fn [m] (f t3 m))
+                                                 (f t3 n)))
+                                        (f t3 50)))
+                            (fn [] (is (= 1 @t3)))))
+       (fn [t seed] (Trackable. t seed))
+       reified-trackable
+       metadata-trackable)))
 
 ;; batching
 
@@ -235,51 +311,93 @@
       (swap! tracker inc)
       (prom/resolved (zipmap seeds seeds)))))
 
+(defn metadata-batched-trackable [tracker seed]
+  ^{:type           'MetaBatchedTrackable
+    `u/-identity    (fn [_] seed)
+    `u/-fetch       (fn [_ _]
+                      (swap! tracker inc)
+                      (prom/resolved seed))
+    `u/-fetch-multi (fn [_ trackables _]
+                      (let [seeds (cons seed (map :seed trackables))]
+                        (swap! tracker inc)
+                        (prom/resolved (zipmap seeds seeds))))}
+  {:seed seed})
+
+(defn reified-batched-trackable [tracker seed]
+  ^{:type 'ReifiedBatchedTrackable
+    :seed seed} ;; the seed is used in -fetch-multi
+   (reify
+     u/DataSource
+     (-identity [_] seed)
+     (-fetch [_ _]
+       (swap! tracker inc)
+       (prom/resolved seed))
+     u/BatchedSource
+    (u/-fetch-multi [_ trackables _]
+      (let [seeds (cons seed (map (comp :seed meta) trackables))]
+        (swap! tracker inc)
+        (prom/resolved (zipmap seeds seeds))))))
+
 #?(:clj
    (deftest batching
-     (let [t (atom 0)]
-       (assert-ast 40
-                   (u/map + (BatchedTrackable. t 10) (BatchedTrackable. t 10) (BatchedTrackable. t 20)))
-       (is (= 1 @t)))
-     (let [t1 (atom 0)]
-       (assert-ast 400
-                   (u/map + (BatchedTrackable. t1 100) (BatchedTrackable. t1 100) (BatchedTrackable. t1 200)))
-       (is (= 1 @t1))))
+     (are [f] (let [t (atom 0)]
+                (assert-ast 40
+                            (u/map + (f t 10) (f t 10) (f t 20)))
+                (is (= 1 @t)))
+       (fn [t seed] (BatchedTrackable. t seed))
+       metadata-batched-trackable
+       reified-batched-trackable))
 
    :cljs
    (deftest batching
-     (let [t (atom 0)]
-       (assert-ast 40
-                   (u/map + (BatchedTrackable. t 10) (BatchedTrackable. t 10) (BatchedTrackable. t 20))
-                   (fn [] (is (= 1 @t)))))
-     (let [t1 (atom 0)]
-       (assert-ast 400
-                   (u/map + (BatchedTrackable. t1 100) (BatchedTrackable. t1 100) (BatchedTrackable. t1 200))
-                   (fn [] (is (= 1 @t1)))))))
+     (are [f] (let [t (atom 0)]
+                (assert-ast 40
+                            (u/map + (f t 10) (f t 10) (f t 20))
+                            (fn [] (is (= 1 @t)))))
+       (fn [t seed] (BatchedTrackable. t seed))
+       metadata-batched-trackable
+       reified-batched-trackable)
+
+     (are [f] (let [t1 (atom 0)]
+                (assert-ast 400
+                            (u/map + (f t1 100) (f t1 100) (f t1 200))
+                            (fn [] (is (= 1 @t1)))))
+       (fn [t seed] (BatchedTrackable. t seed))
+       metadata-batched-trackable
+       reified-batched-trackable)))
 
 #?(:clj
    (deftest batching-multiple-levels
-     (let [t3 (atom 0)]
-       (assert-ast 140 (u/map +
-                             (BatchedTrackable. t3 50)
-                             (u/map (fn [[a b]] (+ a b))
-                                   (u/collect [(BatchedTrackable. t3 40) (BatchedTrackable. t3 50)]))))
-       (is (= 1 @t3)))
-     (let [t4 (atom 0)]
-       (assert-ast 1400 (u/map +
-                              (BatchedTrackable. t4 500)
-                              (u/map (fn [[a b]] (+ a b))
-                                    (u/collect [(BatchedTrackable. t4 400) (BatchedTrackable. t4 500)]))))
-       (is (= 1 @t4)))))
+     (are [f] (let [t3 (atom 0)]
+                (assert-ast 140 (u/map +
+                                       (f t3 50)
+                                       (u/map (fn [[a b]] (+ a b))
+                                              (u/collect [(f t3 40) (f t3 50)]))))
+                (is (= 1 @t3)))
+       (fn [t seed] (BatchedTrackable. t seed))
+       metadata-batched-trackable
+       reified-batched-trackable)
+     (are [f] (let [t4 (atom 0)]
+                (assert-ast 1400 (u/map +
+                                        (f t4 500)
+                                        (u/map (fn [[a b]] (+ a b))
+                                               (u/collect [(f t4 400) (f t4 500)]))))
+                (is (= 1 @t4)))
+       (fn [t seed] (BatchedTrackable. t seed))
+       metadata-batched-trackable
+       reified-batched-trackable)))
 
 #?(:cljs
    (deftest batching-multiple-levels
-     (let [t3 (atom 0)]
-       (assert-ast 140 (u/map +
-                             (BatchedTrackable. t3 50)
-                             (u/map (fn [[a b]] (+ a b))
-                                   (u/collect [(BatchedTrackable. t3 40) (BatchedTrackable. t3 50)])))
-                   (fn [] (is (= 1 @t3)))))))
+     (are [f] (let [t3 (atom 0)]
+                (assert-ast 140 (u/map +
+                                       (f t3 50)
+                                       (u/map (fn [[a b]] (+ a b))
+                                              (u/collect [(f t3 40) (f t3 50)])))
+                            (fn [] (is (= 1 @t3)))))
+       (fn [t seed] (BatchedTrackable. t seed))
+       metadata-batched-trackable
+       reified-batched-trackable)))
 
 ;; executors
 
