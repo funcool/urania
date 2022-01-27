@@ -170,8 +170,8 @@
   (prom/create
    (fn [resolve reject]
      (-execute executor #(-> (try (-fetch muse env)
-                                  (catch Exception ex
-                                    (prom/rejected ex)))
+                                  (catch #?(:clj Exception :cljs :default) e
+                                    (prom/rejected e)))
                              (prom/then resolve)
                              (prom/catch reject))))))
 
@@ -180,8 +180,8 @@
   (prom/create
    (fn [resolve reject]
      (-execute executor #(-> (try (-fetch-multi muse muses env)
-                                  (catch Exception ex
-                                    (prom/rejected ex)))
+                                  (catch #?(:clj Exception :cljs :default) e
+                                    (prom/rejected e)))
                              (prom/then resolve)
                              (prom/catch reject))))))
 
