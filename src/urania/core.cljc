@@ -169,7 +169,10 @@
   [{:keys [executor env]} muse]
   (prom/create
    (fn [resolve reject]
-     (-execute executor #(-> (-fetch muse env)
+     (-execute executor #(-> (try (-fetch muse env)
+                                  ;; fast fail if datasource throws accidentally
+                                  (catch #?(:clj Exception :cljs :default) e
+                                    (prom/rejected e)))
                              (prom/then resolve)
                              (prom/catch reject))))))
 
@@ -177,7 +180,10 @@
   [{:keys [executor env]} muse muses]
   (prom/create
    (fn [resolve reject]
-     (-execute executor #(-> (-fetch-multi muse muses env)
+     (-execute executor #(-> (try (-fetch-multi muse muses env)
+                                  ;; fast fail if datasource throws accidentally
+                                  (catch #?(:clj Exception :cljs :default) e
+                                    (prom/rejected e)))
                              (prom/then resolve)
                              (prom/catch reject))))))
 

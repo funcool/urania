@@ -23,6 +23,11 @@
   (-identity [_] seed)
   (-fetch [_ _] (prom/resolved [seed seed])))
 
+(deftype Throw [seed]
+  u/DataSource
+  (-identity [_] seed)
+  (-fetch [_ _] (throw (ex-info "Uncaught" {:seed seed}))))
+
 (defn- mk-pair [seed] (Pair. seed))
 
 (defn- sum-pair [[a b]] (+ a b))
@@ -77,7 +82,10 @@
               (u/map concat
                     (DList. 10)
                     (DListFail. 30)
-                    (DList. 10))))
+                    (DList. 10)))
+
+  (assert-err #"Uncaught"
+              (Throw. 1)))
 
 (deftest higher-level-api
   (assert-ast [0 1] (u/collect [(SingleItem. 0) (SingleItem. 1)]))
@@ -235,6 +243,17 @@
       (swap! tracker inc)
       (prom/resolved (zipmap seeds seeds)))))
 
+(defrecord BatchedThrow [seed]
+  u/DataSource
+  (-identity [_] seed)
+  (-fetch [_ _]
+    (throw (ex-info "Uncaught unbatched" {:seed seed})))
+
+  u/BatchedSource
+  (-fetch-multi [_ tracables _]
+    (let [seeds (cons seed (map :seed tracables))]
+      (throw (ex-info "Uncaught batched" {:seeds seeds})))))
+
 #?(:clj
    (deftest batching
      (let [t (atom 0)]
@@ -280,6 +299,10 @@
                              (u/map (fn [[a b]] (+ a b))
                                    (u/collect [(BatchedTrackable. t3 40) (BatchedTrackable. t3 50)])))
                    (fn [] (is (= 1 @t3)))))))
+
+(deftest batching-error-propagation
+  (assert-err #"Uncaught batched"
+              (u/collect [(BatchedThrow. 1) (BatchedThrow. 2) (BatchedThrow. 3)])))
 
 ;; executors
 
