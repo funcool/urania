@@ -8,10 +8,12 @@
 
 (defprotocol IExecutor
   "A policy for executing tasks."
+  :extend-via-metadata true
   (-execute [ex task] "Perform a task."))
 
 (defprotocol DataSource
   "A remote data source."
+  :extend-via-metadata true
   (-identity [this]
     "Return an identifier for this data source.
     Used for caching, note that data sources of different types are cached separately.")
@@ -20,12 +22,14 @@
 
 (defprotocol BatchedSource
   "A remote data source that can be fetched in batches."
+  :extend-via-metadata true
   (-fetch-multi [this resources env]
     "Fetch this and other data sources in a single batch.
     The returned promise must be a map from the data source identities to their results."))
 
 (defprotocol Cache
   "A lookup for previously fetched responses"
+  :extend-via-metadata true
   (-get [this resource-name cache-id not-found])
   (-into [this responses-by-resource-name]))
 
