@@ -1,5 +1,5 @@
-(ns urania.core-spec
-  (:require [clojure.test :refer [deftest is] :refer-macros [async]]
+(ns urania.core-spec-test
+  (:require [clojure.test :refer [deftest is testing] :refer-macros [async]]
             [promesa.core :as prom]
             [urania.core :as u]))
 
@@ -119,37 +119,90 @@
 
 ;; caching
 
+(defrecord BatchedCache [seed tracker]
+  ;; delegates to the built-in implementation for map for u/Cache
+  u/Cache
+  (-get [_ resource-name cache-id not-found]
+    (swap! tracker inc)
+    (u/-get seed resource-name cache-id not-found))
+  (-into [_ responses-by-resource-name]
+    (->BatchedCache (u/-into seed responses-by-resource-name) tracker))
+
+  u/BatchedCache
+  (-get-multi [_ resource-name cache-ids not-found]
+    (swap! tracker inc)
+    (reduce (fn [acc cache-id]
+              (assoc acc cache-id (get-in seed [resource-name cache-id] not-found)))
+            {}
+            cache-ids)))
+
 #?(:clj
    (deftest prepopulated-cache
-     (let [t (atom 0)
-           t10 (Trackable. t 10)
-           t20 (Trackable. t 20)
-           cache {(u/resource-name t10) {(u/cache-id t10) 10
-                                         (u/cache-id t20) 20}}]
-       (is (= 40
-              (u/run!! (u/map + t10 t10 t20) {:cache cache})))
-       (is (= 0 @t)))
+     (testing "all resource results already in cache"
+       (let [t (atom 0)
+             t10 (Trackable. t 10)
+             t20 (Trackable. t 20)
+             cache {(u/resource-name t10) {(u/cache-id t10) 10
+                                           (u/cache-id t20) 20}}
+             cache-tracker (atom 0)
+             batched-cache (->BatchedCache cache cache-tracker)]
+         (is (= 40
+                (u/run!! (u/map + t10 t10 t20) {:cache cache})
+                (u/run!! (u/map + t10 t10 t20) {:cache batched-cache})))
+         (is (= 0 @t))
+         (is (= 1 @cache-tracker))))
 
-     (let [t (atom 0)
-           t10 (Trackable. t 10)
-           t20 (Trackable. t 20)
-           cache {(u/resource-name t10) {(u/cache-id t10) 10}}]
-        (is (= [30 {(u/resource-name t10) {(u/cache-id t10) 10
-                                           (u/cache-id t20) 20}}]
-               (deref (u/execute! (u/map + t10 t20) {:cache cache}))))
-        (is (= 1 @t))))
+     (testing "one result in cache, one missing"
+       (testing "cache is a hashmap"
+         (let [t (atom 0)
+               t10 (Trackable. t 10)
+               t20 (Trackable. t 20)
+               cache {(u/resource-name t10) {(u/cache-id t10) 10}}]
+           (is (= [30 {(u/resource-name t10) {(u/cache-id t10) 10
+                                              (u/cache-id t20) 20}}]
+                  (deref (u/execute! (u/map + t10 t20) {:cache cache}))))
+           (is (= 1 @t))))
+
+       (testing "cache is a BatchedCache"
+         (let [t (atom 0)
+               t10 (Trackable. t 10)
+               t20 (Trackable. t 20)
+               cache-tracker (atom 0)
+               cache (->BatchedCache {(u/resource-name t10) {(u/cache-id t10) 10}} cache-tracker)]
+           (is (= [30 (->BatchedCache {(u/resource-name t10) {(u/cache-id t10) 10
+                                                              (u/cache-id t20) 20}}
+                                      cache-tracker)]
+                  (deref (u/execute! (u/map + t10 t20) {:cache cache}))))
+           (is (= 1 @t))))))
 
    :cljs
    (deftest prepopulated-cache
-     (let [t (atom 0)
-           t10 (Trackable. t 10)
-           t20 (Trackable. t 20)
-           cache {(u/resource-name t10) {(u/cache-id t10) 10
-                                         (u/cache-id t20) 20}}]
-       (assert-ast 40
-                   (u/map + t10 t10 t20)
-                   (fn [] (is (= 0 @t)))
-                   {:cache cache}))))
+     (testing "cache is a hashmap"
+       (let [t (atom 0)
+             t10 (Trackable. t 10)
+             t20 (Trackable. t 20)
+             cache {(u/resource-name t10) {(u/cache-id t10) 10
+                                           (u/cache-id t20) 20}}]
+         (assert-ast 40
+                     (u/map + t10 t10 t20)
+                     (fn [] (is (= 0 @t)))
+                     {:cache cache})))
+
+     (testing "cache is a BatchedCache"
+       (let [t (atom 0)
+             t10 (Trackable. t 10)
+             t20 (Trackable. t 20)
+             cache-tracker (atom 0)
+             cache (->BatchedCache {(u/resource-name t10) {(u/cache-id t10) 10
+                                                           (u/cache-id t20) 20}}
+                                   cache-tracker)]
+         (assert-ast 40
+                     (u/map + t10 t10 t20)
+                     (fn []
+                       (is (= 0 @t))
+                       (is (= 1 @cache-tracker)))
+                     {:cache cache})))))
+
 
 #?(:clj
    (deftest caching
