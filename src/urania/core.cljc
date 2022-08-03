@@ -29,9 +29,14 @@
   (-get [this resource-name cache-id not-found])
   (-into [this responses-by-resource-name]))
 
+(defprotocol BatchedCache
+  "A lookup for previously fetched responses that can be fetched in batches"
+  (-get-multi [this resource-name cache-ids not-found]))
+
 ;; AST
 
 (declare inject-into)
+(declare inject-many-into)
 
 (defprotocol AST
   (-children [this])
@@ -59,7 +64,7 @@
   (-children [_] values)
   (-done? [_] false)
   (-inject [_ env]
-    (let [next (clojure.core/map (partial inject-into env) values)]
+    (let [next (inject-many-into env values)]
       (if (every? -done? next)
         (Done. (apply f (clojure.core/map :value next)))
         (Map. f next)))))
@@ -78,7 +83,7 @@
   (-children [_] values)
   (-done? [_] false)
   (-inject [_ env]
-    (let [next (clojure.core/map (partial inject-into env) values)]
+    (let [next (inject-many-into env values)]
       (if (every? -done? next)
         (let [result (inject-into env (apply f (clojure.core/map :value next)))]
           ;; xxx: refactor to avoid dummy leaves creation
@@ -107,17 +112,41 @@
   [res]
   (-identity res))
 
-(defn- cached-or [env res]
-  (let [cache (get env :cache)
-        cached (-get cache (resource-name res) (cache-id res) ::not-found)]
-    (if (= ::not-found cached)
-      (Map. identity [res])
-      (Done. cached))))
+(defn- cache-result [res cached]
+  (if (= ::not-found cached)
+    (Map. identity [res])
+    (Done. cached)))
+
+(defn- cached-many-or [env resources]
+  (let [cache (get env :cache)]
+    (if (satisfies? BatchedCache cache)
+      (->> (group-by resource-name resources)
+           (clojure.core/mapcat (fn [[resource-name resources]]
+                                  (let [cached (into {} (-get-multi cache resource-name (distinct (clojure.core/map cache-id resources)) ::not-found))]
+                                    (clojure.core/map (fn [resource]
+                                                        (cache-result resource (get cached (cache-id resource))))
+                                                      resources)))))
+      (clojure.core/map #(cache-result % (-get cache (resource-name %) (cache-id %) ::not-found))
+                        resources))))
 
 (defn- inject-into [env node]
   (if (satisfies? DataSource node)
-    (cached-or env node)
+    (first (cached-many-or env [node]))
     (-inject node env)))
+
+(defn- inject-many-into [env nodes]
+  (loop [acc []
+         sources (cached-many-or env (filter #(satisfies? DataSource %) nodes))
+         nodes nodes]
+    (if-let [node (first nodes)]
+      (if (satisfies? DataSource node)
+        (recur (conj acc (first sources))
+               (rest sources)
+               (rest nodes))
+        (recur (conj acc (-inject node env))
+               sources
+               (rest nodes)))
+      acc)))
 
 ;; Combinators
 
@@ -238,7 +267,8 @@
         (success! [(:value ast-node) cache])
         (recur ast-node opts success! error!))
       (let [requests-by-type (group-by resource-name requests)
-            responses (clojure.core/map (partial fetch-resource opts) requests-by-type)]
+            responses (clojure.core/map (partial fetch-resource opts)
+                                        requests-by-type)]
         (-> (prom/all responses)
             (prom/then
               (fn [results]
