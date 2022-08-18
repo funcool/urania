@@ -1,0 +1,2 @@
+{:deps  {funcool/promesa {:mvn/version "8.0.450"}}
+ :paths ["src"]}
