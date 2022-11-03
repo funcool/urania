@@ -198,23 +198,25 @@
   [{:keys [executor env]} muse]
   (prom/create
    (fn [resolve reject]
-     (-execute executor #(-> (try (-fetch muse env)
-                                  ;; fast fail if datasource throws accidentally
-                                  (catch #?(:clj Exception :cljs :default) e
-                                    (prom/rejected e)))
-                             (prom/then resolve)
-                             (prom/catch reject))))))
+     (-execute executor (bound-fn []
+                          (-> (try (-fetch muse env)
+                                   ;; fast fail if datasource throws accidentally
+                                   (catch #?(:clj Exception :cljs :default) e
+                                     (prom/rejected e)))
+                              (prom/then resolve)
+                              (prom/catch reject)))))))
 
 (defn- run-fetch-multi
   [{:keys [executor env]} muse muses]
   (prom/create
    (fn [resolve reject]
-     (-execute executor #(-> (try (-fetch-multi muse muses env)
-                                  ;; fast fail if datasource throws accidentally
-                                  (catch #?(:clj Exception :cljs :default) e
-                                    (prom/rejected e)))
-                             (prom/then resolve)
-                             (prom/catch reject))))))
+     (-execute executor (bound-fn []
+                          (-> (try (-fetch-multi muse muses env)
+                                   ;; fast fail if datasource throws accidentally
+                                   (catch #?(:clj Exception :cljs :default) e
+                                     (prom/rejected e)))
+                              (prom/then resolve)
+                              (prom/catch reject)))))))
 
 (defn- fetch-many-caching
   [opts sources]
