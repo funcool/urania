@@ -282,7 +282,7 @@
 #?(:clj
    (extend Executor
      IExecutor
-     {:-execute (fn [ex task] (.execute ex task))}))
+     {:-execute (fn [^Executor ex task] (.execute ex task))}))
 
 (def default-executor
   #?(:clj
