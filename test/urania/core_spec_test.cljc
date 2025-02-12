@@ -28,6 +28,13 @@
   (-identity [_] seed)
   (-fetch [_ _] (throw (ex-info "Uncaught" {:seed seed}))))
 
+(def ^:dynamic dynamic-value 1)
+
+(deftype Dynamic []
+  u/DataSource
+  (-identity [_] dynamic-value)
+  (-fetch [_ _] (prom/resolved dynamic-value)))
+
 (defn- mk-pair [seed] (Pair. seed))
 
 (defn- sum-pair [[a b]] (+ a b))
@@ -415,3 +422,10 @@
                  (u/collect [(Environment. 42) (Environment. 99)])
                  identity
                  {:env :the-environment})))
+
+#?(:clj
+   (deftest thread-bindings-test
+     (assert-ast [1] (u/collect [(Dynamic.)]))
+
+     (binding [dynamic-value 2]
+       (assert-ast [2] (u/collect [(Dynamic.)])))))
